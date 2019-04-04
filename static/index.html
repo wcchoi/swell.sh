@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <link rel="stylesheet" href="lib/xterm/xterm.css" />
+    <link rel="stylesheet" href="lib/iziToast.min.css" />
+
+    <script src="lib/xterm/xterm.js"></script>
+    <script src="lib/xterm/addons/terminado/terminado.js"></script>
+    <script src="lib/xterm/addons/fit/fit.js"></script>
+
+    <script src="lib/mobile-chrome-vh-fix.js"></script>
+    <script src="lib/jquery-2.1.3.min.js"></script>
+    <script src="lib/svg.min.js"></script>
+    <script src="lib/es6-promise.auto.min.js"></script>
+    <script src="lib/PEP.min.js"></script>
+    <script src="lib/lodash.min.js"></script>
+    <script src="lib/reconnecting-websocket.min.js"></script>
+    <script src="lib/iziToast.min.js"></script>
+    <script src="lib/fastclick.js"></script>
+
+    <script>
+    // REF: https://css-tricks.com/the-trick-to-viewport-units-on-mobile/
+    // First we get the viewport height and we multiple it by 1% to get a value for a vh unit
+    var vh = window.innerHeight * 0.01;
+    // Then we set the value in the --vh custom property to the root of the document
+    document.documentElement.style.setProperty('--vh', vh + 'px');
+    </script>
+
+    <!-- for older browser that does not support CSS custom property -->
+    <script src="lib/viewport-units-buggyfill.js"></script>
+    <script>window.viewportUnitsBuggyfill.init();</script>
+
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+    <div id="terminal-container"></div>
+
+    <div id="completerWrap" class="unselectable">
+        <div id="completer" class="mostly-customized-scrollbar"></div>
+    </div>
+
+    <div id="container" class="unselectable">
+        <div id='kbd'></div>
+        <canvas id="canvasOverlay" touch-action="none">
+            Your browser does not support canvas, please upgrade to the latest version.
+        </canvas>
+    </div>
+</div>
+<div id="checkOrientation">
+    <div>
+        This page is designed to run in portrait mode on smartphone,<br>
+        please rotate your device then refresh the page.<br><br>
+
+        If you just want to try on Desktop browser,<br>
+        use the Web Inspector to emulate as mobile device(then refresh),<br>
+        or visit <a href='framed.html'>here</a> (Best with touchscreen)
+    </div>
+</div>
+
+<script>
+var options = [
+    {selector: '#app', vh: 100},
+]
+var vhFix = new VHChromeFix(options)
+
+var completerWrapHeight = document.querySelector('div#completerWrap').clientHeight
+var completerElem = document.querySelector('div#completer')
+completerElem.style.fontSize = completerWrapHeight/2 + 'px'
+completerElem.style.lineHeight = completerWrapHeight + 'px'
+
+window.oncontextmenu = function() { return false; } // disable the annoying right-click menu on Touch screen on long press
+</script>
+
+<script src="preapp.js"></script>
+<script src="app.js"></script>
+<script>
+$(function() {
+    var fontSize = localStorage.getItem('terminal-font-size') || 12;
+    fontSize = Number(fontSize)
+    console.log('fontSize:', fontSize)
+    Terminal.setFontSize(fontSize);
+    // For older version iOS (~Safari 7): uncomment if needed
+    // setTimeout(function() { term.fit() }, 2000);
+    // setTimeout(function() {term.setOption('rendererType', 'dom');}, 2100);
+
+    FastClick.attach(document.querySelector('div#completer'));
+})
+</script>
+
+<style>
+/* Override the blur cursor style of xterm as if focused when using DOM Renderer */
+.xterm-dom-renderer-owner-1 .xterm-rows:not(.xterm-focus) .xterm-cursor {
+    background-color: #ffffff;
+    color: #000000;
+}
+</style>
+
+</body>
+</html>

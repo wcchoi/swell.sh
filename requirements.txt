@@ -1,0 +1,4 @@
+terminado==0.8.1
+loguru==0.2.5
+pyelftools==0.25
+tenacity==5.0.3

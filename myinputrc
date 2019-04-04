@@ -1,0 +1,17 @@
+###  From Ubuntu's /etc/inputrc
+set input-meta on
+set output-meta on
+
+### Don't suggest hidden files unless the dot(.) is provided
+set match-hidden-files off
+
+### TODO:
+### set completion-ignore-case on
+
+### Don't show Display all XXX possibilities? (y or n)
+### OTHERWISE sometimes the command will be executed by pybcompgen, which can be very wrong... (eg: 'rm -rf /' !?)
+### eg: completing "find " on a folder with many files without the below set will slow down noticably because "find" is executing
+### NOTE2: now the command to complete is prefixed with a void function, in theory should prevent the above from happening
+set completion-query-items 0
+
+### Others?

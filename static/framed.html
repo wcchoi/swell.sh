@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <style>
+        body {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+<div class="iframe_wrapper"
+    id="display"
+    style="width: 414px; height: 736px; transform: scale(1); left: 0px; top: 0px; position: static; margin: 0px auto;">
+        <iframe style="width: 100%;height: 100%;" src="index.html"></iframe>
+</div>
+<script>
+// Get rid of the ugly scrollbar on Desktop browsers (Only Chrome)
+
+var iframe = document.querySelector('iframe');
+
+var styleTag = document.createElement('style');
+styleTag.innerText = '' +
+'.xterm .xterm-viewport::-webkit-scrollbar {' + 
+'    display: none;' + 
+'}' + 
+'' + 
+'/* REF: https://developer.mozilla.org/en-US/docs/Web/CSS/::-webkit-scrollbar */' + 
+'.mostly-customized-scrollbar::-webkit-scrollbar {' + 
+'    width: 5px;' + 
+'    height: 5px;' + 
+'    background-color: #aaa; /* or add it to the track */' + 
+'}' + 
+'' + 
+'/* Add a thumb */' + 
+'.mostly-customized-scrollbar::-webkit-scrollbar-thumb {' + 
+'    background: #000; ' + 
+'}'
+
+iframe.contentWindow.addEventListener('DOMContentLoaded', function() {
+    iframe.contentDocument.querySelector('head').appendChild(styleTag);
+});
+</script>
+</body>
+</html>
