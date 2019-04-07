@@ -3,7 +3,11 @@
 Swell.sh is a terminal for bash designed for use on mobile phone web browser, it comes with convenient features such as autocomplete suggestion and gesture typing keyboard.
 It is useful for quickly troubleshooting server problems on the go, or in your bed in the middle of the night. If you occassionally use the SSH app on your phone, you may want to give Swell.sh a try!
 
-[GIF IMAGE]
+<p align="center">
+    <a target="_blank" rel="noopener noreferrer" href="demo.gif">
+        <img width="240" alt="demo" src="demo.gif" />
+    </a>
+</p>
 
 **Table Of Content:**
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
