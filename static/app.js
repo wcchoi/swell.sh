@@ -2049,6 +2049,36 @@ var Keyboard = (function (Terminal, Analyzer) {
         return null
     }
 
+    var initLayout = function(ith) {
+        console.log("initLayout", ith)
+        var kbdw = _width
+        var kbdh = _height
+        var layout = _keyboardSVG.group()
+        layout.attr('id','layout-'+String(ith))
+        _layoutsSVG[ith] = layout
+
+        for(var i = 0; i < _layoutsConfig[ith].length; i++) {
+            var key = _layoutsConfig[ith][i]
+            var keyrect = layout
+                            .rect(kbdw*key.w, kbdh*key.h)
+                            .fill({ color: '#f0f0f0' })
+                            .stroke({width: 2, color: '#ffffff'})
+                            .center(key.cx*kbdw, key.cy*kbdh)
+
+            var fontSize = key.fontSize || '2rem'
+
+            var keytext = layout
+                            .text(key.keytext)
+                            .font({ size: fontSize, family: 'Helvetica' })
+                            .center(key.cx*kbdw, key.cy*kbdh)
+
+            var keygroup = layout.group().add(keyrect).add(keytext)
+            keygroup.attr('id',key.keyid+'-key')
+        }
+
+        layout.hide() //initially all layouts are hidden
+    }
+
     var initLayouts = function() {
         var kbdw = _width
         var kbdh = _height
@@ -2081,7 +2111,14 @@ var Keyboard = (function (Terminal, Analyzer) {
     }
 
     var switchLayout = function(num) {
-        _layoutsSVG[_currLayout].hide()
+        if(_layoutsSVG[_currLayout]) {
+            _layoutsSVG[_currLayout].hide()
+        }
+
+        if(!_layoutsSVG[num]) {
+            initLayout(num)
+        }
+
         _layoutsSVG[num].show()
         _currLayout = num
     }
@@ -2228,7 +2265,8 @@ var Keyboard = (function (Terminal, Analyzer) {
         _div = container.querySelector('div')
         _keyboardSVG = SVG(_div).attr('viewBox', '0 0 ' + String(_width) + ' ' + String(_height))
 
-        initLayouts()
+        // initLayouts()
+
         // to prevent the unnecessary scrollbar appearing on IE
         // whenever there are <text> with center greater than
         // some weird threshold

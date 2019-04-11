@@ -3,7 +3,17 @@
     terminado.apply(OriginalTerminal);
     OriginalTerminal.applyAddon(fit);  // Apply the `fit` addon
 
-    var term = new OriginalTerminal();
+    var fontSize = localStorage.getItem('terminal-font-size') || 12;
+    fontSize = Number(fontSize)
+    console.log('fontSize:', fontSize)
+
+    // For older version iOS (~Safari 7): uncomment if needed
+    // setTimeout(function() { term.fit() }, 2000);
+    // setTimeout(function() {term.setOption('rendererType', 'dom');}, 2100);
+
+    var term = new OriginalTerminal({
+        fontSize: fontSize                               
+    });
     window.term = term;
 
     var protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';
@@ -27,7 +37,6 @@
     });
 
     term.open(document.getElementById('terminal-container'));
-    // term.fit()
 
     var hideOSKeyboard = setInterval(function() {
         if(term.textarea) {
@@ -45,6 +54,7 @@
             setTimeout(function() {term.focus();}, 50);
             setTimeout(function() {term.blur(); }, 100);
             setTimeout(function() {term.textarea.disabled = true; }, 150);
+            term.fit()
         }
     }, 100);
 })()

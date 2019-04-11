@@ -86,6 +86,9 @@ def remove_control_characters(s):
     s = s.replace('[1@#', '')
     return "".join(ch for ch in s if unicodedata.category(ch)[0] != "C")
 
+# NOTE: by adding the void here,
+# if bash-completion package is not installed, `complete` won't suggest commands
+# so in that case make sure {to_complete} already contains command + ' ' + xxx
 CMD_TMPL = [
     #'cd {cwd}',
     'void(){{ :; }}',

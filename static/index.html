@@ -80,14 +80,6 @@ window.oncontextmenu = function() { return false; } // disable the annoying righ
 <script src="app.js"></script>
 <script>
 $(function() {
-    var fontSize = localStorage.getItem('terminal-font-size') || 12;
-    fontSize = Number(fontSize)
-    console.log('fontSize:', fontSize)
-    Terminal.setFontSize(fontSize);
-    // For older version iOS (~Safari 7): uncomment if needed
-    // setTimeout(function() { term.fit() }, 2000);
-    // setTimeout(function() {term.setOption('rendererType', 'dom');}, 2100);
-
     FastClick.attach(document.querySelector('div#completer'));
 })
 </script>
