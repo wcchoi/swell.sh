@@ -187,7 +187,7 @@ A: Click a key 'T+'
 A: Click '…' Key then input in the text box using the mobile OS's keyboard 
 
 ##### Q: Programs like `htop`/`vim` are not using full screen space:
-A: try running the `resize`/`resizecons` command, could be obtained from `kbd` package on Ubuntu
+A: Try changing font size or running the `resize`/`resizecons` command, which could be obtained from `kbd` package on Ubuntu
 
 ##### Tips
 You can to set the Bash prompt to shorter for more space for typing the commands, by `export PS1='$ '`

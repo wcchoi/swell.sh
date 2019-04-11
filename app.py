@@ -431,7 +431,7 @@ if __name__ == '__main__':
         (r"/()", tornado.web.StaticFileHandler, {'path':'./static/index.html'}),
         (r"/(.*)", tornado.web.StaticFileHandler, {'path':'./static/'}),
     ]
-    app = tornado.web.Application(handlers)
+    app = tornado.web.Application(handlers, compress_response=True)
     app.listen(options.port, options.host)
     logger.info("Listening on port {}:{}".format(options.host, options.port))
     IOLoop.current().start()
