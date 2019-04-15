@@ -190,7 +190,8 @@ A: Click '…' Key then input in the text box using the mobile OS's keyboard
 A: Try changing font size or running the `resize`/`resizecons` command, which could be obtained from `kbd` package on Ubuntu
 
 ##### Tips
-You can to set the Bash prompt to shorter for more space for typing the commands, by `export PS1='$ '`
+- You can to set the Bash prompt to shorter for more space for typing the commands, by `export PS1='$ '`
+- If you are using Android Chrome, you can use "Add to Home screen" (from the hamburger menu) to add a shortcut to the web app, this allows launching without the address bar to save more screen space
 
 
 ## Acknowledgement
