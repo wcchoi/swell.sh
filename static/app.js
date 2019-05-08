@@ -50,6 +50,7 @@ var showErrorCompleter = function(err) {
 var Analyzer = (function() {
     var worker
     var promiseResolve, promiseReject
+    var latestTS
 
     var initialize = function() {
         worker = new Worker("worker.js")
@@ -68,7 +69,11 @@ var Analyzer = (function() {
                 if(msg.err) {
                     promiseReject(msg.err)
                 } else {
-                    promiseResolve(msg.data)
+                    if(msg.ts === latestTS) {
+                        promiseResolve(msg.data)
+                    } else {
+                        console.warn("Out of order", msg.ts, latestTS)
+                    }
                 }
             }
         }
@@ -78,6 +83,8 @@ var Analyzer = (function() {
     //make Web Worker promise
     var makeWWPromise = function(msg) {
         var promise = new Promise(function (resolve, reject) {
+            latestTS = Date.now()
+            msg['ts'] = latestTS
             worker.postMessage(msg)
             promiseResolve = resolve
             promiseReject = reject

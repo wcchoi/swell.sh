@@ -137,7 +137,7 @@ function sharedStart(array){
     return a1.substring(0, i);
 }
 
-_getCompletionsAtLoc['bash'] = function() {
+_getCompletionsAtLoc['bash'] = function(cb) {
     fetch('/line' + '?t=' + String(Date.now()))
         .then(function(resp) {
             return resp.json()
@@ -174,7 +174,7 @@ _getCompletionsAtLoc['bash'] = function() {
                             reupdateCompleter: reupdateCompleter,
                             addSpaceAtEnd: false,
                         }
-                        postMessage({data: data})
+                        cb({data: data})
 
                     })
             } else {
@@ -200,17 +200,17 @@ _getCompletionsAtLoc['bash'] = function() {
                 }
                 // postMessage({debug: 'b 3' + prefix})
 
-                postMessage({data: data})
+                cb({data: data})
             }
         })
         .catch(function(err) {
             console.error(err)
-            postMessage({err: err.message})
+            cb({err: err.message})
         })
 }
 
-var getCompletionsAtLoc = function(file, loc, mode) {
-    _getCompletionsAtLoc['bash']()
+var getCompletionsAtLoc = function(cb) {
+    _getCompletionsAtLoc['bash'](cb)
 }
 
 var getSearchSpace = function(completions, mode) {
@@ -233,7 +233,7 @@ function getNearestCenter(pt) {
     return _.min(dists, '1')[0]
 }
 
-var getSuggestions = function(inputpath, completions, mode) {
+var getSuggestions = function(inputpath, completions, mode, cb) {
     var diff = function(g1, g2) {
         if(!g1 || !g2 || g1.length !== g2.length) {
             //error state...
@@ -298,10 +298,10 @@ var getSuggestions = function(inputpath, completions, mode) {
     var r = _.sortBy(output, 'score')
     r = r.slice(0, NBest)
     // console.table(r)
-    postMessage( {data: r} )
+    cb({data: r})
 }
 
-var getCompletions = function() {
+var getCompletions = function(cb) {
     //search all the keywords
     //var charsBefore = getCharsBefore(file, loc)
     //var data = {completions: _.filter(dict, function(word){
@@ -311,7 +311,7 @@ var getCompletions = function() {
     //start: {line: loc.line, ch: loc.ch - charsBefore.length},
     //end: loc}
 
-    postMessage({
+    cb({
         data: {
             completions: reservedWords['bash'],
         }
@@ -321,6 +321,13 @@ var getCompletions = function() {
 var startListening = function() {
     self.onmessage = function(e) {
         var msg = e.data
+        var callback = function(reply) {
+            reply['ts'] = msg.ts;
+            postMessage(reply);
+        }
+        if(msg.args && _.isArray(msg.args)) {
+            msg.args.push(callback)
+        }
         switch(msg.fn) {
             case "getSuggestions":
                 getSuggestions.apply(self, msg.args)
