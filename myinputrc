@@ -14,4 +14,6 @@ set match-hidden-files off
 ### NOTE2: now the command to complete is prefixed with a void function, in theory should prevent the above from happening
 set completion-query-items 0
 
+set show-all-if-ambiguous on
+
 ### Others?

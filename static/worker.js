@@ -151,17 +151,20 @@ _getCompletionsAtLoc['bash'] = function(cb) {
                         return resp.json()
                     })
                     .then(function(json2) {
-                        // var prefix = json.line.slice(0, json.point)
+                        // look for white space before point
+                        var prevSpacePos = json.line.slice(0, json.point).lastIndexOf(' ')
+                        if(prevSpacePos > -1) {
+                            var prevToken = json.line.slice(prevSpacePos+1, json.point)
+                        }
                         if(json2.data.length > 1) {
                             var prefix = sharedStart(json2.data)
+                            prefix = sharedStart([prefix, prevToken])
                             var reupdateCompleter = true
                         } else if(json2.data.length === 0) {
                             prefix = ''
                         } else { // only one
-                            // look for white space before point
-                            var lastSpacePos = json.line.slice(0, json.point).lastIndexOf(' ')
-                            if(lastSpacePos > -1) {
-                                prefix = json.line.slice(lastSpacePos+1, json.point)
+                            if(prevSpacePos > -1) {
+                                prefix = prevToken
                                 var reupdateCompleter = true
                             } else {
                                 prefix = ''

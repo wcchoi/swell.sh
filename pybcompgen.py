@@ -97,7 +97,7 @@ CMD_TMPL = [
     'void(){{ :; }}',
     'declare -F _command &>/dev/null && complete -F _command void',
     'echo MARKER',
-    'void {complete}\t\t\x01#',
+    'void {complete}\t\x01#',
     'echo MARKER',
 ]
 CMD_TMPL = '\n'.join(CMD_TMPL)
