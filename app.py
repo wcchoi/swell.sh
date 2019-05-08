@@ -354,6 +354,35 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
             logger.error(e)
             raise tornado.web.HTTPError
 
+
+def restart_program():
+	# From https://www.daniweb.com/programming/software-development/code/260268/restart-your-python-program
+    """Restarts the current program.
+    Note: this function does not return. Any cleanup action (like
+    saving data) must be done before calling this function."""
+    python = sys.executable
+    os.execl(python, python, *sys.argv)
+
+class MyTermSocket(TermSocket):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def on_pty_died(self):
+        super().on_pty_died()
+        time.sleep(3)
+        IOLoop.current().stop()
+
+        # get all child pids (by ProcessPoolExecutor)
+        children_pids = get_children_of_pid(os.getpid())
+        # print("children_pids", os.getpid(), children_pids)
+
+        for pid in children_pids:
+            os.kill(pid, signal.SIGTERM)
+
+        time.sleep(1)
+        logger.info("Restarting server....")
+        restart_program()
+
 from tornado.options import define, options
 define("host", default="127.0.0.1", help="Listen interface")
 define("port", default=8010, help="Listen port")
@@ -440,7 +469,7 @@ if __name__ == '__main__':
     executor = concurrent.futures.ProcessPoolExecutor()
 
     handlers = [
-        (r"/websocket", TermSocket, {'term_manager': term_manager}),
+        (r"/websocket", MyTermSocket, {'term_manager': term_manager}),
         (r"/compgen", GetAllCommandHandler),
         (r"/line", GetBashLineHandler, {'bash_info': bash_info}),
         (r"/autocomplete", AutoCompleteHandler, {'bash_info': bash_info, 'executor': executor}),

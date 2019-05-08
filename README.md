@@ -108,7 +108,6 @@ These are the current limitations, some maybe fixed in future update. PR welcome
 - The bug of autocomplete suggestion that sometimes it gives no/wrong suggestion (though you can still input a TAB key to trigger autocomplete just like on normal keyboard)
 - Accuracy of the swipe gesture input may not be high
     - NOTE: currently the swipe gesture algorithm works best when the full/longer path is traced
-- If you killed the bash shell (by exit command or CTRL-D), have to restart the server process (app.py)
 - The PATH env var is not refreshed, i.e. the autocomplete suggestion would not detect change in PATH and add new executables for suggestions
 - Possibly more... see Issue page
 
