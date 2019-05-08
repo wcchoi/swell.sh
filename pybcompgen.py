@@ -67,9 +67,12 @@ Swell.sh changes:
 """
 import sys
 import unicodedata
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, DEVNULL, TimeoutExpired
 import os
+import signal
 import re
+import shutil
+import shlex
 
 from functools import reduce
 
@@ -99,6 +102,7 @@ CMD_TMPL = [
 ]
 CMD_TMPL = '\n'.join(CMD_TMPL)
 
+BASH_PATH = shutil.which('bash')
 
 def complete(to_complete, cwd=None):
     """ wow! so this is stupid, but what can you do? to understand
@@ -148,11 +152,21 @@ def complete(to_complete, cwd=None):
     if not cwd:
         cwd = os.getcwd()
 
-    cmd = '''bash -c "printf '{cmd_tmpl}'|bash -i"'''.format(cmd_tmpl=CMD_TMPL)
+    cmd = '''{bash} -c "printf '{cmd_tmpl}'| bash -i"'''.format(cmd_tmpl=CMD_TMPL, bash=BASH_PATH)
     cmd = cmd.format(cwd=cwd, complete=to_complete)
 
-    p1 = Popen(cmd, shell=True, stdout=PIPE, stdin=PIPE, stderr=PIPE, env=my_env, cwd=cwd)
-    out, err = p1.communicate(timeout=1)
+    p1 = Popen(shlex.split(cmd), shell=False, stdout=PIPE, stdin=DEVNULL, stderr=PIPE, env=my_env, cwd=cwd, start_new_session=True)
+    try:
+        # print("spawning", p1.pid)
+        out, err = p1.communicate(timeout=1)
+    except TimeoutExpired as e:
+        # print("timeout, terminating", p1.pid)
+        # p1.terminate()
+        os.killpg(os.getpgid(p1.pid), signal.SIGTERM) # kill the subprocesses (i.e. bash -i) as well
+        p1.wait()
+        out, err = p1.communicate()
+        raise e
+
     err = err.decode('utf-8')
 
     # print(err)

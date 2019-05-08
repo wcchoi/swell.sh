@@ -102,7 +102,6 @@ These are the current limitations, some maybe fixed in future update. PR welcome
     - also the autocomplete suggestion works on the outermost bash (the one spawned by app.py) only, if you enter a new bash sub-shell, or SSH to other server, it won't work
 - Client is only tested to work on the latest version of Chrome on Android and Safari on iOS (that I have access to), older/other browser may still work (some polyfills are applied), but YMMV
 - Single-session only, i.e.: if multiple client devices are simultaneously connected, they will be looking at the same thing
-- Request will block the server, so if you type very fast and latency from client to server is high, UI will become sluggish...
 - Keyboard is US QWERTY layout only
 - Keyboard is single-touch only, so you CANNOT press-hold the CTRL key then tap C key to input CTRL-C, have to tap CTRL and then tap C
 - Keyboard does not support some key yet, eg: F1/F2, Page-up/down, CTRL-]/CTRL-^, CTRL-ALT+X, etc

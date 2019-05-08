@@ -10,6 +10,8 @@ import signal
 import errno
 from collections import defaultdict
 from ctypes import create_string_buffer, byref, c_int, c_void_p, c_long, c_size_t, c_ssize_t, POINTER, get_errno
+import concurrent
+import asyncio
 
 import tornado.web
 from tornado import gen
@@ -313,28 +315,33 @@ class GetAllCommandHandler(tornado.web.RequestHandler):
             'data': get_all_bash_commands()
         })
 
-class AutoCompleteHandler(tornado.web.RequestHandler):
-    def initialize(self, bash_info):
-        self.bash_info = bash_info
+# Declared here because can't pickle lambda
+def get_pybcompgen_complete(line, cwd):
+    return pybcompgen.complete(line, cwd)
 
-    def get(self):
+class AutoCompleteHandler(tornado.web.RequestHandler):
+    def initialize(self, bash_info, executor):
+        self.bash_info = bash_info
+        self.executor = executor
+
+    async def get(self):
         try:
             bash_pid, rl_line_buffer_addr, rl_point_addr = self.bash_info.get_interacting_bash_state()
             line, point = get_bash_line_retry(bash_pid, rl_line_buffer_addr, rl_point_addr)
         except Exception as e:
             logger.exception(e)
             raise tornado.web.HTTPError
-        else:
+        finally:
+            ptrace_detach(bash_pid)
+
+        try:
             readlink_dir = '/proc/{}/cwd'.format(bash_pid)
             cwd = os.readlink(readlink_dir)
             # logger.info('cwd: {}, {}'.format(readlink_dir, cwd))
             line = line[:point]
 
-            try:
-                ret = pybcompgen.complete(line, cwd)
-            except subprocess.TimeoutExpired as e:
-                logger.exception(e)
-                raise tornado.web.HTTPError
+            fut = IOLoop.current().run_in_executor(self.executor, get_pybcompgen_complete, line, cwd)
+            ret = await fut
 
             ret.sort(key=lambda s: s.lower())
 
@@ -343,14 +350,21 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
                 'line': line,
                 'point': point,
             })
-        finally:
-            ptrace_detach(bash_pid)
+        except Exception as e:
+            logger.error(e)
+            raise tornado.web.HTTPError
 
 from tornado.options import define, options
 define("host", default="127.0.0.1", help="Listen interface")
 define("port", default=8010, help="Listen port")
 
 if __name__ == '__main__':
+    # Ignore this signal SIGTTIN because sometimes when bash process spawned by pybcompgen
+    # timeout, it sends this signal to app.py, causing app.py to stop (put to background)
+    # NOTE no longer needed because Popen use start_new_session (the spawned bash is a new process group),
+    # the signal will not send to app.py
+    # signal.signal(signal.SIGTTIN, signal.SIG_IGN)
+
     tornado.options.parse_command_line()
 
     print(r'''
@@ -423,11 +437,13 @@ if __name__ == '__main__':
     )
     # pprint(bash_info.__dict__)
 
+    executor = concurrent.futures.ProcessPoolExecutor()
+
     handlers = [
         (r"/websocket", TermSocket, {'term_manager': term_manager}),
         (r"/compgen", GetAllCommandHandler),
         (r"/line", GetBashLineHandler, {'bash_info': bash_info}),
-        (r"/autocomplete", AutoCompleteHandler, {'bash_info': bash_info}),
+        (r"/autocomplete", AutoCompleteHandler, {'bash_info': bash_info, 'executor': executor}),
         (r"/()", tornado.web.StaticFileHandler, {'path':'./static/index.html'}),
         (r"/(.*)", tornado.web.StaticFileHandler, {'path':'./static/'}),
     ]
