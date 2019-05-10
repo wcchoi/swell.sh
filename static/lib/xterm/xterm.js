@@ -15,7 +15,7 @@ var __extends = (this && this.__extends) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 var Strings = require("./Strings");
-var Browser_1 = require("./shared/utils/Browser");
+var Platform_1 = require("./core/Platform");
 var RenderDebouncer_1 = require("./ui/RenderDebouncer");
 var Lifecycle_1 = require("./ui/Lifecycle");
 var Lifecycle_2 = require("./common/Lifecycle");
@@ -152,7 +152,7 @@ var AccessibilityManager = (function (_super) {
                     this._liveRegion.textContent += Strings.tooMuchOutput;
                 }
             }
-            if (Browser_1.isMac) {
+            if (Platform_1.isMac) {
                 if (this._liveRegion.textContent && this._liveRegion.textContent.length > 0 && !this._liveRegion.parentNode) {
                     setTimeout(function () {
                         _this._accessibilityTreeRoot.appendChild(_this._liveRegion);
@@ -164,7 +164,7 @@ var AccessibilityManager = (function (_super) {
     AccessibilityManager.prototype._clearLiveRegion = function () {
         this._liveRegion.textContent = '';
         this._liveRegionLineCount = 0;
-        if (Browser_1.isMac) {
+        if (Platform_1.isMac) {
             if (this._liveRegion.parentNode) {
                 this._accessibilityTreeRoot.removeChild(this._liveRegion);
             }
@@ -215,7 +215,7 @@ var AccessibilityManager = (function (_super) {
 }(Lifecycle_2.Disposable));
 exports.AccessibilityManager = AccessibilityManager;
 
-},{"./Strings":13,"./common/Lifecycle":18,"./shared/utils/Browser":46,"./ui/Lifecycle":48,"./ui/RenderDebouncer":50}],2:[function(require,module,exports){
+},{"./Strings":14,"./common/Lifecycle":20,"./core/Platform":23,"./ui/Lifecycle":57,"./ui/RenderDebouncer":60}],2:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -231,28 +231,40 @@ var __extends = (this && this.__extends) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+var BufferLine_1 = require("./BufferLine");
+var BufferReflow_1 = require("./BufferReflow");
 var CircularList_1 = require("./common/CircularList");
 var EventEmitter_1 = require("./common/EventEmitter");
-var BufferLine_1 = require("./BufferLine");
-exports.DEFAULT_ATTR = (0 << 18) | (257 << 9) | (256 << 0);
+var Types_1 = require("./renderer/atlas/Types");
+exports.DEFAULT_ATTR = (0 << 18) | (Types_1.DEFAULT_COLOR << 9) | (256 << 0);
 exports.CHAR_DATA_ATTR_INDEX = 0;
 exports.CHAR_DATA_CHAR_INDEX = 1;
 exports.CHAR_DATA_WIDTH_INDEX = 2;
 exports.CHAR_DATA_CODE_INDEX = 3;
 exports.MAX_BUFFER_SIZE = 4294967295;
-exports.NULL_CELL_CHAR = ' ';
+exports.NULL_CELL_CHAR = '';
 exports.NULL_CELL_WIDTH = 1;
-exports.NULL_CELL_CODE = 32;
+exports.NULL_CELL_CODE = 0;
+exports.WHITESPACE_CELL_CHAR = ' ';
+exports.WHITESPACE_CELL_WIDTH = 1;
+exports.WHITESPACE_CELL_CODE = 32;
+exports.FILL_CHAR_DATA = [exports.DEFAULT_ATTR, exports.NULL_CELL_CHAR, exports.NULL_CELL_WIDTH, exports.NULL_CELL_CODE];
 var Buffer = (function () {
     function Buffer(_terminal, _hasScrollback) {
         this._terminal = _terminal;
         this._hasScrollback = _hasScrollback;
         this.markers = [];
+        this._cols = this._terminal.cols;
+        this._rows = this._terminal.rows;
         this.clear();
     }
+    Buffer.prototype.getBlankLine = function (attr, isWrapped) {
+        var fillCharData = [attr, exports.NULL_CELL_CHAR, exports.NULL_CELL_WIDTH, exports.NULL_CELL_CODE];
+        return new BufferLine_1.BufferLine(this._cols, fillCharData, isWrapped);
+    };
     Object.defineProperty(Buffer.prototype, "hasScrollback", {
         get: function () {
-            return this._hasScrollback && this.lines.maxLength > this._terminal.rows;
+            return this._hasScrollback && this.lines.maxLength > this._rows;
         },
         enumerable: true,
         configurable: true
@@ -261,7 +273,7 @@ var Buffer = (function () {
         get: function () {
             var absoluteY = this.ybase + this.y;
             var relativeY = absoluteY - this.ydisp;
-            return (relativeY >= 0 && relativeY < this._terminal.rows);
+            return (relativeY >= 0 && relativeY < this._rows);
         },
         enumerable: true,
         configurable: true
@@ -273,11 +285,14 @@ var Buffer = (function () {
         var correctBufferLength = rows + this._terminal.options.scrollback;
         return correctBufferLength > exports.MAX_BUFFER_SIZE ? exports.MAX_BUFFER_SIZE : correctBufferLength;
     };
-    Buffer.prototype.fillViewportRows = function () {
+    Buffer.prototype.fillViewportRows = function (fillAttr) {
         if (this.lines.length === 0) {
-            var i = this._terminal.rows;
+            if (fillAttr === undefined) {
+                fillAttr = exports.DEFAULT_ATTR;
+            }
+            var i = this._rows;
             while (i--) {
-                this.lines.push(BufferLine_1.BufferLine.blankLine(this._terminal.cols, exports.DEFAULT_ATTR));
+                this.lines.push(this.getBlankLine(fillAttr));
             }
         }
     };
@@ -286,9 +301,9 @@ var Buffer = (function () {
         this.ybase = 0;
         this.y = 0;
         this.x = 0;
-        this.lines = new CircularList_1.CircularList(this._getCorrectBufferLength(this._terminal.rows));
+        this.lines = new CircularList_1.CircularList(this._getCorrectBufferLength(this._rows));
         this.scrollTop = 0;
-        this.scrollBottom = this._terminal.rows - 1;
+        this.scrollBottom = this._rows - 1;
         this.setupTabStops();
     };
     Buffer.prototype.resize = function (newCols, newRows) {
@@ -297,17 +312,14 @@ var Buffer = (function () {
             this.lines.maxLength = newMaxLength;
         }
         if (this.lines.length > 0) {
-            if (this._terminal.cols < newCols) {
-                var ch = [exports.DEFAULT_ATTR, exports.NULL_CELL_CHAR, exports.NULL_CELL_WIDTH, exports.NULL_CELL_CODE];
+            if (this._cols < newCols) {
                 for (var i = 0; i < this.lines.length; i++) {
-                    while (this.lines.get(i).length < newCols) {
-                        this.lines.get(i).push(ch);
-                    }
+                    this.lines.get(i).resize(newCols, exports.FILL_CHAR_DATA);
                 }
             }
             var addToY = 0;
-            if (this._terminal.rows < newRows) {
-                for (var y = this._terminal.rows; y < newRows; y++) {
+            if (this._rows < newRows) {
+                for (var y = this._rows; y < newRows; y++) {
                     if (this.lines.length < newRows + this.ybase) {
                         if (this.ybase > 0 && this.lines.length <= this.ybase + this.y + addToY + 1) {
                             this.ybase--;
@@ -317,13 +329,13 @@ var Buffer = (function () {
                             }
                         }
                         else {
-                            this.lines.push(BufferLine_1.BufferLine.blankLine(newCols, exports.DEFAULT_ATTR));
+                            this.lines.push(new BufferLine_1.BufferLine(newCols, exports.FILL_CHAR_DATA));
                         }
                     }
                 }
             }
             else {
-                for (var y = this._terminal.rows; y > newRows; y--) {
+                for (var y = this._rows; y > newRows; y--) {
                     if (this.lines.length > newRows + this.ybase) {
                         if (this.lines.length > this.ybase + this.y + 1) {
                             this.lines.pop();
@@ -354,15 +366,204 @@ var Buffer = (function () {
             this.scrollTop = 0;
         }
         this.scrollBottom = newRows - 1;
+        if (this._isReflowEnabled) {
+            this._reflow(newCols, newRows);
+            if (this._cols > newCols) {
+                for (var i = 0; i < this.lines.length; i++) {
+                    this.lines.get(i).resize(newCols, exports.FILL_CHAR_DATA);
+                }
+            }
+        }
+        this._cols = newCols;
+        this._rows = newRows;
     };
-    Buffer.prototype.stringIndexToBufferIndex = function (lineIndex, stringIndex) {
+    Object.defineProperty(Buffer.prototype, "_isReflowEnabled", {
+        get: function () {
+            return this._hasScrollback && !this._terminal.isWinptyCompatEnabled;
+        },
+        enumerable: true,
+        configurable: true
+    });
+    Buffer.prototype._reflow = function (newCols, newRows) {
+        if (this._cols === newCols) {
+            return;
+        }
+        if (newCols > this._cols) {
+            this._reflowLarger(newCols, newRows);
+        }
+        else {
+            this._reflowSmaller(newCols, newRows);
+        }
+    };
+    Buffer.prototype._reflowLarger = function (newCols, newRows) {
+        var toRemove = BufferReflow_1.reflowLargerGetLinesToRemove(this.lines, newCols, this.ybase + this.y);
+        if (toRemove.length > 0) {
+            var newLayoutResult = BufferReflow_1.reflowLargerCreateNewLayout(this.lines, toRemove);
+            BufferReflow_1.reflowLargerApplyNewLayout(this.lines, newLayoutResult.layout);
+            this._reflowLargerAdjustViewport(newCols, newRows, newLayoutResult.countRemoved);
+        }
+    };
+    Buffer.prototype._reflowLargerAdjustViewport = function (newCols, newRows, countRemoved) {
+        var viewportAdjustments = countRemoved;
+        while (viewportAdjustments-- > 0) {
+            if (this.ybase === 0) {
+                if (this.y > 0) {
+                    this.y--;
+                }
+                if (this.lines.length < newRows) {
+                    this.lines.push(new BufferLine_1.BufferLine(newCols, exports.FILL_CHAR_DATA));
+                }
+            }
+            else {
+                if (this.ydisp === this.ybase) {
+                    this.ydisp--;
+                }
+                this.ybase--;
+            }
+        }
+    };
+    Buffer.prototype._reflowSmaller = function (newCols, newRows) {
+        var toInsert = [];
+        var countToInsert = 0;
+        for (var y = this.lines.length - 1; y >= 0; y--) {
+            var nextLine = this.lines.get(y);
+            if (!nextLine.isWrapped && nextLine.getTrimmedLength() <= newCols) {
+                continue;
+            }
+            var wrappedLines = [nextLine];
+            while (nextLine.isWrapped && y > 0) {
+                nextLine = this.lines.get(--y);
+                wrappedLines.unshift(nextLine);
+            }
+            var absoluteY = this.ybase + this.y;
+            if (absoluteY >= y && absoluteY < y + wrappedLines.length) {
+                continue;
+            }
+            var lastLineLength = wrappedLines[wrappedLines.length - 1].getTrimmedLength();
+            var destLineLengths = BufferReflow_1.reflowSmallerGetNewLineLengths(wrappedLines, this._cols, newCols);
+            var linesToAdd = destLineLengths.length - wrappedLines.length;
+            var trimmedLines = void 0;
+            if (this.ybase === 0 && this.y !== this.lines.length - 1) {
+                trimmedLines = Math.max(0, this.y - this.lines.maxLength + linesToAdd);
+            }
+            else {
+                trimmedLines = Math.max(0, this.lines.length - this.lines.maxLength + linesToAdd);
+            }
+            var newLines = [];
+            for (var i = 0; i < linesToAdd; i++) {
+                var newLine = this.getBlankLine(exports.DEFAULT_ATTR, true);
+                newLines.push(newLine);
+            }
+            if (newLines.length > 0) {
+                toInsert.push({
+                    start: y + wrappedLines.length + countToInsert,
+                    newLines: newLines
+                });
+                countToInsert += newLines.length;
+            }
+            wrappedLines.push.apply(wrappedLines, newLines);
+            var destLineIndex = destLineLengths.length - 1;
+            var destCol = destLineLengths[destLineIndex];
+            if (destCol === 0) {
+                destLineIndex--;
+                destCol = destLineLengths[destLineIndex];
+            }
+            var srcLineIndex = wrappedLines.length - linesToAdd - 1;
+            var srcCol = lastLineLength;
+            while (srcLineIndex >= 0) {
+                var cellsToCopy = Math.min(srcCol, destCol);
+                wrappedLines[destLineIndex].copyCellsFrom(wrappedLines[srcLineIndex], srcCol - cellsToCopy, destCol - cellsToCopy, cellsToCopy, true);
+                destCol -= cellsToCopy;
+                if (destCol === 0) {
+                    destLineIndex--;
+                    destCol = destLineLengths[destLineIndex];
+                }
+                srcCol -= cellsToCopy;
+                if (srcCol === 0) {
+                    srcLineIndex--;
+                    srcCol = wrappedLines[Math.max(srcLineIndex, 0)].getTrimmedLength();
+                }
+            }
+            for (var i = 0; i < wrappedLines.length; i++) {
+                if (destLineLengths[i] < newCols) {
+                    wrappedLines[i].set(destLineLengths[i], exports.FILL_CHAR_DATA);
+                }
+            }
+            var viewportAdjustments = linesToAdd - trimmedLines;
+            while (viewportAdjustments-- > 0) {
+                if (this.ybase === 0) {
+                    if (this.y < newRows - 1) {
+                        this.y++;
+                        this.lines.pop();
+                    }
+                    else {
+                        this.ybase++;
+                        this.ydisp++;
+                    }
+                }
+                else {
+                    if (this.ybase < Math.min(this.lines.maxLength, this.lines.length + countToInsert) - newRows) {
+                        if (this.ybase === this.ydisp) {
+                            this.ydisp++;
+                        }
+                        this.ybase++;
+                    }
+                }
+            }
+        }
+        if (toInsert.length > 0) {
+            var insertEvents = [];
+            var originalLines = [];
+            for (var i = 0; i < this.lines.length; i++) {
+                originalLines.push(this.lines.get(i));
+            }
+            var originalLinesLength = this.lines.length;
+            var originalLineIndex = originalLinesLength - 1;
+            var nextToInsertIndex = 0;
+            var nextToInsert = toInsert[nextToInsertIndex];
+            this.lines.length = Math.min(this.lines.maxLength, this.lines.length + countToInsert);
+            var countInsertedSoFar = 0;
+            for (var i = Math.min(this.lines.maxLength - 1, originalLinesLength + countToInsert - 1); i >= 0; i--) {
+                if (nextToInsert && nextToInsert.start > originalLineIndex + countInsertedSoFar) {
+                    for (var nextI = nextToInsert.newLines.length - 1; nextI >= 0; nextI--) {
+                        this.lines.set(i--, nextToInsert.newLines[nextI]);
+                    }
+                    i++;
+                    insertEvents.push({
+                        index: originalLineIndex + 1,
+                        amount: nextToInsert.newLines.length
+                    });
+                    countInsertedSoFar += nextToInsert.newLines.length;
+                    nextToInsert = toInsert[++nextToInsertIndex];
+                }
+                else {
+                    this.lines.set(i, originalLines[originalLineIndex--]);
+                }
+            }
+            var insertCountEmitted = 0;
+            for (var i = insertEvents.length - 1; i >= 0; i--) {
+                insertEvents[i].index += insertCountEmitted;
+                this.lines.emit('insert', insertEvents[i]);
+                insertCountEmitted += insertEvents[i].amount;
+            }
+            var amountToTrim = Math.max(0, originalLinesLength + countToInsert - this.lines.maxLength);
+            if (amountToTrim > 0) {
+                this.lines.emitMayRemoveListeners('trim', amountToTrim);
+            }
+        }
+    };
+    Buffer.prototype.stringIndexToBufferIndex = function (lineIndex, stringIndex, trimRight) {
+        if (trimRight === void 0) { trimRight = false; }
         while (stringIndex) {
             var line = this.lines.get(lineIndex);
             if (!line) {
-                [-1, -1];
+                return [-1, -1];
             }
-            for (var i = 0; i < line.length; ++i) {
-                stringIndex -= line.get(i)[exports.CHAR_DATA_CHAR_INDEX].length;
+            var length_1 = (trimRight) ? line.getTrimmedLength() : line.length;
+            for (var i = 0; i < length_1; ++i) {
+                if (line.get(i)[exports.CHAR_DATA_WIDTH_INDEX]) {
+                    stringIndex -= line.get(i)[exports.CHAR_DATA_CHAR_INDEX].length || 1;
+                }
                 if (stringIndex < 0) {
                     return [lineIndex, i];
                 }
@@ -373,49 +574,11 @@ var Buffer = (function () {
     };
     Buffer.prototype.translateBufferLineToString = function (lineIndex, trimRight, startCol, endCol) {
         if (startCol === void 0) { startCol = 0; }
-        if (endCol === void 0) { endCol = null; }
-        var lineString = '';
         var line = this.lines.get(lineIndex);
         if (!line) {
             return '';
         }
-        var startIndex = startCol;
-        if (endCol === null) {
-            endCol = line.length;
-        }
-        var endIndex = endCol;
-        for (var i = 0; i < line.length; i++) {
-            var char = line.get(i);
-            lineString += char[exports.CHAR_DATA_CHAR_INDEX];
-            if (char[exports.CHAR_DATA_WIDTH_INDEX] === 0) {
-                if (startCol >= i) {
-                    startIndex--;
-                }
-                if (endCol > i) {
-                    endIndex--;
-                }
-            }
-            else {
-                if (char[exports.CHAR_DATA_CHAR_INDEX].length > 1) {
-                    if (startCol > i) {
-                        startIndex += char[exports.CHAR_DATA_CHAR_INDEX].length - 1;
-                    }
-                    if (endCol > i) {
-                        endIndex += char[exports.CHAR_DATA_CHAR_INDEX].length - 1;
-                    }
-                }
-            }
-        }
-        if (trimRight) {
-            var rightWhitespaceIndex = lineString.search(/\s+$/);
-            if (rightWhitespaceIndex !== -1) {
-                endIndex = Math.min(endIndex, rightWhitespaceIndex);
-            }
-            if (endIndex <= startIndex) {
-                return '';
-            }
-        }
-        return lineString.substring(startIndex, endIndex);
+        return line.translateToString(trimRight, startCol, endCol);
     };
     Buffer.prototype.getWrappedRangeForLine = function (y) {
         var first = y;
@@ -438,7 +601,7 @@ var Buffer = (function () {
             this.tabs = {};
             i = 0;
         }
-        for (; i < this._terminal.cols; i += this._terminal.options.tabStopWidth) {
+        for (; i < this._cols; i += this._terminal.options.tabStopWidth) {
             this.tabs[i] = true;
         }
     };
@@ -448,15 +611,15 @@ var Buffer = (function () {
         }
         while (!this.tabs[--x] && x > 0)
             ;
-        return x >= this._terminal.cols ? this._terminal.cols - 1 : x < 0 ? 0 : x;
+        return x >= this._cols ? this._cols - 1 : x < 0 ? 0 : x;
     };
     Buffer.prototype.nextStop = function (x) {
         if (x === null || x === undefined) {
             x = this.x;
         }
-        while (!this.tabs[++x] && x < this._terminal.cols)
+        while (!this.tabs[++x] && x < this._cols)
             ;
-        return x >= this._terminal.cols ? this._terminal.cols - 1 : x < 0 ? 0 : x;
+        return x >= this._cols ? this._cols - 1 : x < 0 ? 0 : x;
     };
     Buffer.prototype.addMarker = function (y) {
         var _this = this;
@@ -466,6 +629,19 @@ var Buffer = (function () {
             marker.line -= amount;
             if (marker.line < 0) {
                 marker.dispose();
+            }
+        }));
+        marker.register(this.lines.addDisposableListener('insert', function (event) {
+            if (marker.line >= event.index) {
+                marker.line += event.amount;
+            }
+        }));
+        marker.register(this.lines.addDisposableListener('delete', function (event) {
+            if (marker.line >= event.index && marker.line < event.index + event.amount) {
+                marker.dispose();
+            }
+            if (marker.line > event.index) {
+                marker.line -= event.amount;
             }
         }));
         marker.register(marker.addDisposableListener('dispose', function () { return _this._removeMarker(marker); }));
@@ -541,7 +717,7 @@ var BufferStringIterator = (function () {
         range.last = Math.min(range.last, this._buffer.lines.length);
         var result = '';
         for (var i = range.first; i <= range.last; ++i) {
-            result += this._buffer.translateBufferLineToString(i, (this._trimRight) ? i === range.last : false);
+            result += this._buffer.translateBufferLineToString(i, this._trimRight);
         }
         this._current = range.last + 1;
         return { range: range, content: result };
@@ -550,78 +726,347 @@ var BufferStringIterator = (function () {
 }());
 exports.BufferStringIterator = BufferStringIterator;
 
-},{"./BufferLine":3,"./common/CircularList":16,"./common/EventEmitter":17}],3:[function(require,module,exports){
+},{"./BufferLine":3,"./BufferReflow":4,"./common/CircularList":17,"./common/EventEmitter":19,"./renderer/atlas/Types":46}],3:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Buffer_1 = require("./Buffer");
+var CELL_SIZE = 3;
+var IS_COMBINED_BIT_MASK = 0x80000000;
 var BufferLine = (function () {
-    function BufferLine(cols, ch, isWrapped) {
-        this.isWrapped = false;
-        this._data = [];
-        this.length = this._data.length;
+    function BufferLine(cols, fillCharData, isWrapped) {
+        if (isWrapped === void 0) { isWrapped = false; }
+        this.isWrapped = isWrapped;
+        this._data = null;
+        this._combined = {};
+        if (!fillCharData) {
+            fillCharData = [0, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE];
+        }
         if (cols) {
-            if (!ch) {
-                ch = [0, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE];
-            }
-            for (var i = 0; i < cols; i++) {
-                this.push(ch);
+            this._data = new Uint32Array(cols * CELL_SIZE);
+            for (var i = 0; i < cols; ++i) {
+                this.set(i, fillCharData);
             }
         }
-        if (isWrapped) {
-            this.isWrapped = true;
-        }
+        this.length = cols;
     }
-    BufferLine.blankLine = function (cols, attr, isWrapped) {
-        var ch = [attr, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE];
-        return new BufferLine(cols, ch, isWrapped);
-    };
     BufferLine.prototype.get = function (index) {
-        return this._data[index];
+        var stringData = this._data[index * CELL_SIZE + 1];
+        return [
+            this._data[index * CELL_SIZE + 0],
+            (stringData & IS_COMBINED_BIT_MASK)
+                ? this._combined[index]
+                : (stringData) ? String.fromCharCode(stringData) : '',
+            this._data[index * CELL_SIZE + 2],
+            (stringData & IS_COMBINED_BIT_MASK)
+                ? this._combined[index].charCodeAt(this._combined[index].length - 1)
+                : stringData
+        ];
     };
-    BufferLine.prototype.set = function (index, data) {
-        this._data[index] = data;
+    BufferLine.prototype.getWidth = function (index) {
+        return this._data[index * CELL_SIZE + 2];
     };
-    BufferLine.prototype.pop = function () {
-        var data = this._data.pop();
-        this.length = this._data.length;
-        return data;
-    };
-    BufferLine.prototype.push = function (data) {
-        this._data.push(data);
-        this.length = this._data.length;
-    };
-    BufferLine.prototype.splice = function (start, deleteCount) {
-        var items = [];
-        for (var _i = 2; _i < arguments.length; _i++) {
-            items[_i - 2] = arguments[_i];
+    BufferLine.prototype.set = function (index, value) {
+        this._data[index * CELL_SIZE + 0] = value[0];
+        if (value[1].length > 1) {
+            this._combined[index] = value[1];
+            this._data[index * CELL_SIZE + 1] = index | IS_COMBINED_BIT_MASK;
         }
-        var _a;
-        var removed = (_a = this._data).splice.apply(_a, [start, deleteCount].concat(items));
-        this.length = this._data.length;
-        return removed;
+        else {
+            this._data[index * CELL_SIZE + 1] = value[1].charCodeAt(0);
+        }
+        this._data[index * CELL_SIZE + 2] = value[2];
     };
-    BufferLine.prototype.insertCells = function (pos, n, ch) {
-        while (n--) {
-            this.splice(pos, 0, ch);
-            this.pop();
+    BufferLine.prototype.insertCells = function (pos, n, fillCharData) {
+        pos %= this.length;
+        if (n < this.length - pos) {
+            for (var i = this.length - pos - n - 1; i >= 0; --i) {
+                this.set(pos + n + i, this.get(pos + i));
+            }
+            for (var i = 0; i < n; ++i) {
+                this.set(pos + i, fillCharData);
+            }
+        }
+        else {
+            for (var i = pos; i < this.length; ++i) {
+                this.set(i, fillCharData);
+            }
         }
     };
-    BufferLine.prototype.deleteCells = function (pos, n, fill) {
-        while (n--) {
-            this.splice(pos, 1);
-            this.push(fill);
+    BufferLine.prototype.deleteCells = function (pos, n, fillCharData) {
+        pos %= this.length;
+        if (n < this.length - pos) {
+            for (var i = 0; i < this.length - pos - n; ++i) {
+                this.set(pos + i, this.get(pos + n + i));
+            }
+            for (var i = this.length - n; i < this.length; ++i) {
+                this.set(i, fillCharData);
+            }
+        }
+        else {
+            for (var i = pos; i < this.length; ++i) {
+                this.set(i, fillCharData);
+            }
         }
     };
-    BufferLine.prototype.replaceCells = function (start, end, fill) {
+    BufferLine.prototype.replaceCells = function (start, end, fillCharData) {
         while (start < end && start < this.length) {
-            this.set(start++, fill);
+            this.set(start++, fillCharData);
         }
+    };
+    BufferLine.prototype.resize = function (cols, fillCharData) {
+        if (cols === this.length) {
+            return;
+        }
+        if (cols > this.length) {
+            var data = new Uint32Array(cols * CELL_SIZE);
+            if (this.length) {
+                if (cols * CELL_SIZE < this._data.length) {
+                    data.set(this._data.subarray(0, cols * CELL_SIZE));
+                }
+                else {
+                    data.set(this._data);
+                }
+            }
+            this._data = data;
+            for (var i = this.length; i < cols; ++i) {
+                this.set(i, fillCharData);
+            }
+        }
+        else {
+            if (cols) {
+                var data = new Uint32Array(cols * CELL_SIZE);
+                data.set(this._data.subarray(0, cols * CELL_SIZE));
+                this._data = data;
+                var keys = Object.keys(this._combined);
+                for (var i = 0; i < keys.length; i++) {
+                    var key = parseInt(keys[i], 10);
+                    if (key >= cols) {
+                        delete this._combined[key];
+                    }
+                }
+            }
+            else {
+                this._data = null;
+                this._combined = {};
+            }
+        }
+        this.length = cols;
+    };
+    BufferLine.prototype.fill = function (fillCharData) {
+        this._combined = {};
+        for (var i = 0; i < this.length; ++i) {
+            this.set(i, fillCharData);
+        }
+    };
+    BufferLine.prototype.copyFrom = function (line) {
+        if (this.length !== line.length) {
+            this._data = new Uint32Array(line._data);
+        }
+        else {
+            this._data.set(line._data);
+        }
+        this.length = line.length;
+        this._combined = {};
+        for (var el in line._combined) {
+            this._combined[el] = line._combined[el];
+        }
+        this.isWrapped = line.isWrapped;
+    };
+    BufferLine.prototype.clone = function () {
+        var newLine = new BufferLine(0);
+        newLine._data = new Uint32Array(this._data);
+        newLine.length = this.length;
+        for (var el in this._combined) {
+            newLine._combined[el] = this._combined[el];
+        }
+        newLine.isWrapped = this.isWrapped;
+        return newLine;
+    };
+    BufferLine.prototype.getTrimmedLength = function () {
+        for (var i = this.length - 1; i >= 0; --i) {
+            if (this._data[i * CELL_SIZE + 1] !== 0) {
+                return i + this._data[i * CELL_SIZE + 2];
+            }
+        }
+        return 0;
+    };
+    BufferLine.prototype.copyCellsFrom = function (src, srcCol, destCol, length, applyInReverse) {
+        var srcData = src._data;
+        if (applyInReverse) {
+            for (var cell = length - 1; cell >= 0; cell--) {
+                for (var i = 0; i < CELL_SIZE; i++) {
+                    this._data[(destCol + cell) * CELL_SIZE + i] = srcData[(srcCol + cell) * CELL_SIZE + i];
+                }
+            }
+        }
+        else {
+            for (var cell = 0; cell < length; cell++) {
+                for (var i = 0; i < CELL_SIZE; i++) {
+                    this._data[(destCol + cell) * CELL_SIZE + i] = srcData[(srcCol + cell) * CELL_SIZE + i];
+                }
+            }
+        }
+        var srcCombinedKeys = Object.keys(src._combined);
+        for (var i = 0; i < srcCombinedKeys.length; i++) {
+            var key = parseInt(srcCombinedKeys[i], 10);
+            if (key >= srcCol) {
+                this._combined[key - srcCol + destCol] = src._combined[key];
+            }
+        }
+    };
+    BufferLine.prototype.translateToString = function (trimRight, startCol, endCol) {
+        if (trimRight === void 0) { trimRight = false; }
+        if (startCol === void 0) { startCol = 0; }
+        if (endCol === void 0) { endCol = this.length; }
+        if (trimRight) {
+            endCol = Math.min(endCol, this.getTrimmedLength());
+        }
+        var result = '';
+        while (startCol < endCol) {
+            var stringData = this._data[startCol * CELL_SIZE + 1];
+            result += (stringData & IS_COMBINED_BIT_MASK) ? this._combined[startCol] : (stringData) ? String.fromCharCode(stringData) : Buffer_1.WHITESPACE_CELL_CHAR;
+            startCol += this._data[startCol * CELL_SIZE + 2] || 1;
+        }
+        return result;
     };
     return BufferLine;
 }());
 exports.BufferLine = BufferLine;
 
 },{"./Buffer":2}],4:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var Buffer_1 = require("./Buffer");
+function reflowLargerGetLinesToRemove(lines, newCols, bufferAbsoluteY) {
+    var toRemove = [];
+    for (var y = 0; y < lines.length - 1; y++) {
+        var i = y;
+        var nextLine = lines.get(++i);
+        if (!nextLine.isWrapped) {
+            continue;
+        }
+        var wrappedLines = [lines.get(y)];
+        while (i < lines.length && nextLine.isWrapped) {
+            wrappedLines.push(nextLine);
+            nextLine = lines.get(++i);
+        }
+        if (bufferAbsoluteY >= y && bufferAbsoluteY < i) {
+            y += wrappedLines.length - 1;
+            continue;
+        }
+        var destLineIndex = 0;
+        var destCol = wrappedLines[destLineIndex].getTrimmedLength();
+        var srcLineIndex = 1;
+        var srcCol = 0;
+        while (srcLineIndex < wrappedLines.length) {
+            var srcTrimmedTineLength = wrappedLines[srcLineIndex].getTrimmedLength();
+            var srcRemainingCells = srcTrimmedTineLength - srcCol;
+            var destRemainingCells = newCols - destCol;
+            var cellsToCopy = Math.min(srcRemainingCells, destRemainingCells);
+            wrappedLines[destLineIndex].copyCellsFrom(wrappedLines[srcLineIndex], srcCol, destCol, cellsToCopy, false);
+            destCol += cellsToCopy;
+            if (destCol === newCols) {
+                destLineIndex++;
+                destCol = 0;
+            }
+            srcCol += cellsToCopy;
+            if (srcCol === srcTrimmedTineLength) {
+                srcLineIndex++;
+                srcCol = 0;
+            }
+            if (destCol === 0 && destLineIndex !== 0) {
+                if (wrappedLines[destLineIndex - 1].getWidth(newCols - 1) === 2) {
+                    wrappedLines[destLineIndex].copyCellsFrom(wrappedLines[destLineIndex - 1], newCols - 1, destCol++, 1, false);
+                    wrappedLines[destLineIndex - 1].set(newCols - 1, Buffer_1.FILL_CHAR_DATA);
+                }
+            }
+        }
+        wrappedLines[destLineIndex].replaceCells(destCol, newCols, Buffer_1.FILL_CHAR_DATA);
+        var countToRemove = 0;
+        for (var i_1 = wrappedLines.length - 1; i_1 > 0; i_1--) {
+            if (i_1 > destLineIndex || wrappedLines[i_1].getTrimmedLength() === 0) {
+                countToRemove++;
+            }
+            else {
+                break;
+            }
+        }
+        if (countToRemove > 0) {
+            toRemove.push(y + wrappedLines.length - countToRemove);
+            toRemove.push(countToRemove);
+        }
+        y += wrappedLines.length - 1;
+    }
+    return toRemove;
+}
+exports.reflowLargerGetLinesToRemove = reflowLargerGetLinesToRemove;
+function reflowLargerCreateNewLayout(lines, toRemove) {
+    var layout = [];
+    var nextToRemoveIndex = 0;
+    var nextToRemoveStart = toRemove[nextToRemoveIndex];
+    var countRemovedSoFar = 0;
+    for (var i = 0; i < lines.length; i++) {
+        if (nextToRemoveStart === i) {
+            var countToRemove = toRemove[++nextToRemoveIndex];
+            lines.emit('delete', {
+                index: i - countRemovedSoFar,
+                amount: countToRemove
+            });
+            i += countToRemove - 1;
+            countRemovedSoFar += countToRemove;
+            nextToRemoveStart = toRemove[++nextToRemoveIndex];
+        }
+        else {
+            layout.push(i);
+        }
+    }
+    return {
+        layout: layout,
+        countRemoved: countRemovedSoFar
+    };
+}
+exports.reflowLargerCreateNewLayout = reflowLargerCreateNewLayout;
+function reflowLargerApplyNewLayout(lines, newLayout) {
+    var newLayoutLines = [];
+    for (var i = 0; i < newLayout.length; i++) {
+        newLayoutLines.push(lines.get(newLayout[i]));
+    }
+    for (var i = 0; i < newLayoutLines.length; i++) {
+        lines.set(i, newLayoutLines[i]);
+    }
+    lines.length = newLayout.length;
+}
+exports.reflowLargerApplyNewLayout = reflowLargerApplyNewLayout;
+function reflowSmallerGetNewLineLengths(wrappedLines, oldCols, newCols) {
+    var newLineLengths = [];
+    var cellsNeeded = wrappedLines.map(function (l) { return l.getTrimmedLength(); }).reduce(function (p, c) { return p + c; });
+    var srcCol = 0;
+    var srcLine = 0;
+    var cellsAvailable = 0;
+    while (cellsAvailable < cellsNeeded) {
+        if (cellsNeeded - cellsAvailable < newCols) {
+            newLineLengths.push(cellsNeeded - cellsAvailable);
+            break;
+        }
+        srcCol += newCols;
+        var oldTrimmedLength = wrappedLines[srcLine].getTrimmedLength();
+        if (srcCol > oldTrimmedLength) {
+            srcCol -= oldTrimmedLength;
+            srcLine++;
+        }
+        var endsWithWide = wrappedLines[srcLine].getWidth(srcCol - 1) === 2;
+        if (endsWithWide) {
+            srcCol--;
+        }
+        var lineLength = endsWithWide ? newCols - 1 : newCols;
+        newLineLengths.push(lineLength);
+        cellsAvailable += lineLength;
+    }
+    return newLineLengths;
+}
+exports.reflowSmallerGetNewLineLengths = reflowSmallerGetNewLineLengths;
+
+},{"./Buffer":2}],5:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -676,6 +1121,8 @@ var BufferSet = (function (_super) {
         if (this._activeBuffer === this._normal) {
             return;
         }
+        this._normal.x = this._alt.x;
+        this._normal.y = this._alt.y;
         this._alt.clear();
         this._activeBuffer = this._normal;
         this.emit('activate', {
@@ -683,11 +1130,13 @@ var BufferSet = (function (_super) {
             inactiveBuffer: this._alt
         });
     };
-    BufferSet.prototype.activateAltBuffer = function () {
+    BufferSet.prototype.activateAltBuffer = function (fillAttr) {
         if (this._activeBuffer === this._alt) {
             return;
         }
-        this._alt.fillViewportRows();
+        this._alt.fillViewportRows(fillAttr);
+        this._alt.x = this._normal.x;
+        this._alt.y = this._normal.y;
         this._activeBuffer = this._alt;
         this.emit('activate', {
             activeBuffer: this._alt,
@@ -706,9 +1155,10 @@ var BufferSet = (function (_super) {
 }(EventEmitter_1.EventEmitter));
 exports.BufferSet = BufferSet;
 
-},{"./Buffer":2,"./common/EventEmitter":17}],5:[function(require,module,exports){
+},{"./Buffer":2,"./common/EventEmitter":19}],6:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+var TypedArrayUtils_1 = require("./common/TypedArrayUtils");
 exports.wcwidth = (function (opts) {
     var COMBINING_BMP = [
         [0x0300, 0x036F], [0x0483, 0x0486], [0x0488, 0x0489],
@@ -783,33 +1233,6 @@ exports.wcwidth = (function (opts) {
         }
         return false;
     }
-    function wcwidthBMP(ucs) {
-        if (ucs === 0) {
-            return opts.nul;
-        }
-        if (ucs < 32 || (ucs >= 0x7f && ucs < 0xa0)) {
-            return opts.control;
-        }
-        if (bisearch(ucs, COMBINING_BMP)) {
-            return 0;
-        }
-        if (isWideBMP(ucs)) {
-            return 2;
-        }
-        return 1;
-    }
-    function isWideBMP(ucs) {
-        return (ucs >= 0x1100 && (ucs <= 0x115f ||
-            ucs === 0x2329 ||
-            ucs === 0x232a ||
-            (ucs >= 0x2e80 && ucs <= 0xa4cf && ucs !== 0x303f) ||
-            (ucs >= 0xac00 && ucs <= 0xd7a3) ||
-            (ucs >= 0xf900 && ucs <= 0xfaff) ||
-            (ucs >= 0xfe10 && ucs <= 0xfe19) ||
-            (ucs >= 0xfe30 && ucs <= 0xfe6f) ||
-            (ucs >= 0xff00 && ucs <= 0xff60) ||
-            (ucs >= 0xffe0 && ucs <= 0xffe6)));
-    }
     function wcwidthHigh(ucs) {
         if (bisearch(ucs, COMBINING_HIGH)) {
             return 0;
@@ -820,62 +1243,87 @@ exports.wcwidth = (function (opts) {
         return 1;
     }
     var control = opts.control | 0;
-    var table = null;
-    function initTable() {
-        var CODEPOINTS = 65536;
-        var BITWIDTH = 2;
-        var ITEMSIZE = 32;
-        var CONTAINERSIZE = CODEPOINTS * BITWIDTH / ITEMSIZE;
-        var CODEPOINTS_PER_ITEM = ITEMSIZE / BITWIDTH;
-        table = (typeof Uint32Array === 'undefined')
-            ? new Array(CONTAINERSIZE)
-            : new Uint32Array(CONTAINERSIZE);
-        for (var i = 0; i < CONTAINERSIZE; ++i) {
-            var num = 0;
-            var pos = CODEPOINTS_PER_ITEM;
-            while (pos--) {
-                num = (num << 2) | wcwidthBMP(CODEPOINTS_PER_ITEM * i + pos);
-            }
-            table[i] = num;
-        }
-        return table;
+    var table = new Uint8Array(65536);
+    TypedArrayUtils_1.fill(table, 1);
+    table[0] = opts.nul;
+    TypedArrayUtils_1.fill(table, opts.control, 1, 32);
+    TypedArrayUtils_1.fill(table, opts.control, 0x7f, 0xa0);
+    TypedArrayUtils_1.fill(table, 2, 0x1100, 0x1160);
+    table[0x2329] = 2;
+    table[0x232a] = 2;
+    TypedArrayUtils_1.fill(table, 2, 0x2e80, 0xa4d0);
+    table[0x303f] = 1;
+    TypedArrayUtils_1.fill(table, 2, 0xac00, 0xd7a4);
+    TypedArrayUtils_1.fill(table, 2, 0xf900, 0xfb00);
+    TypedArrayUtils_1.fill(table, 2, 0xfe10, 0xfe1a);
+    TypedArrayUtils_1.fill(table, 2, 0xfe30, 0xfe70);
+    TypedArrayUtils_1.fill(table, 2, 0xff00, 0xff61);
+    TypedArrayUtils_1.fill(table, 2, 0xffe0, 0xffe7);
+    for (var r = 0; r < COMBINING_BMP.length; ++r) {
+        TypedArrayUtils_1.fill(table, 0, COMBINING_BMP[r][0], COMBINING_BMP[r][1] + 1);
     }
     return function (num) {
-        num = num | 0;
         if (num < 32) {
             return control | 0;
         }
         if (num < 127) {
             return 1;
         }
-        var t = table || initTable();
         if (num < 65536) {
-            return t[num >> 4] >> ((num & 15) << 1) & 3;
+            return table[num];
         }
         return wcwidthHigh(num);
     };
 })({ nul: 0, control: 0 });
 function getStringCellWidth(s) {
     var result = 0;
-    for (var i = 0; i < s.length; ++i) {
+    var length = s.length;
+    for (var i = 0; i < length; ++i) {
         var code = s.charCodeAt(i);
         if (0xD800 <= code && code <= 0xDBFF) {
-            var low = s.charCodeAt(i + 1);
-            if (isNaN(low)) {
-                return result;
+            if (++i >= length) {
+                return result + exports.wcwidth(code);
             }
-            code = ((code - 0xD800) * 0x400) + (low - 0xDC00) + 0x10000;
-        }
-        if (0xDC00 <= code && code <= 0xDFFF) {
-            continue;
+            var second = s.charCodeAt(i);
+            if (0xDC00 <= second && second <= 0xDFFF) {
+                code = (code - 0xD800) * 0x400 + second - 0xDC00 + 0x10000;
+            }
+            else {
+                result += exports.wcwidth(second);
+            }
         }
         result += exports.wcwidth(code);
     }
     return result;
 }
 exports.getStringCellWidth = getStringCellWidth;
+function isEmoji(str) {
+    if (str.codePointAt === undefined) {
+        return false;
+    }
+    var codePoint = str.codePointAt(0);
+    if (codePoint < 8400) {
+        return false;
+    }
+    if ((codePoint >= 0x1F600 && codePoint <= 0x1F64F) ||
+        (codePoint >= 0x1F300 && codePoint <= 0x1F5FF) ||
+        (codePoint >= 0x1F680 && codePoint <= 0x1F6FF) ||
+        (codePoint >= 0x1F1E6 && codePoint <= 0x1F1FF) ||
+        (codePoint >= 0x2600 && codePoint <= 0x26FF) ||
+        (codePoint >= 0x2700 && codePoint <= 0x27BF) ||
+        (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||
+        (codePoint >= 0x1F900 && codePoint <= 0x1F9FF) ||
+        (codePoint >= 127000 && codePoint <= 127600) ||
+        (codePoint >= 65024 && codePoint <= 65039) ||
+        (codePoint >= 9100 && codePoint <= 9300) ||
+        (codePoint >= 8400 && codePoint <= 8447)) {
+        return true;
+    }
+    return false;
+}
+exports.isEmoji = isEmoji;
 
-},{}],6:[function(require,module,exports){
+},{"./common/TypedArrayUtils":21}],7:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var CompositionHelper = (function () {
@@ -887,6 +1335,13 @@ var CompositionHelper = (function () {
         this._isSendingComposition = false;
         this._compositionPosition = { start: null, end: null };
     }
+    Object.defineProperty(CompositionHelper.prototype, "isComposing", {
+        get: function () {
+            return this._isComposing;
+        },
+        enumerable: true,
+        configurable: true
+    });
     CompositionHelper.prototype.compositionstart = function () {
         this._isComposing = true;
         this._compositionPosition.start = this._textarea.value.length;
@@ -909,7 +1364,7 @@ var CompositionHelper = (function () {
             if (ev.keyCode === 229) {
                 return false;
             }
-            else if (ev.keyCode === 16 || ev.keyCode === 17 || ev.keyCode === 18) {
+            else if (ev.keyCode === 16 || ev.keyCode === 17 || ev.keyCode === 18 || ev.keyCode === 91 || ev.keyCode === 92) {
                 return false;
             }
             this._finalizeComposition(false);
@@ -920,12 +1375,12 @@ var CompositionHelper = (function () {
         }
         return true;
     };
-    CompositionHelper.prototype._finalizeComposition = function (waitForPropogation) {
+    CompositionHelper.prototype._finalizeComposition = function (waitForPropagation) {
         var _this = this;
         this._compositionView.classList.remove('active');
         this._isComposing = false;
         this._clearTextareaPosition();
-        if (!waitForPropogation) {
+        if (!waitForPropagation) {
             this._isSendingComposition = false;
             var input = this._textarea.value.substring(this._compositionPosition.start, this._compositionPosition.end);
             this._terminal.handler(input);
@@ -977,12 +1432,16 @@ var CompositionHelper = (function () {
             this._compositionView.style.top = cursorTop + 'px';
             this._compositionView.style.height = cellHeight + 'px';
             this._compositionView.style.lineHeight = cellHeight + 'px';
+            this._compositionView.style.fontFamily = this._terminal.options.fontFamily;
+            this._compositionView.style.fontSize = this._terminal.options.fontSize + 'px';
             var compositionViewBounds = this._compositionView.getBoundingClientRect();
+            var width = Math.max(compositionViewBounds.width, this._terminal.charMeasure.width);
+            var height = Math.max(compositionViewBounds.height, this._terminal.charMeasure.height);
             this._textarea.style.left = cursorLeft + 'px';
             this._textarea.style.top = cursorTop + 'px';
-            this._textarea.style.width = compositionViewBounds.width + 'px';
-            this._textarea.style.height = compositionViewBounds.height + 'px';
-            this._textarea.style.lineHeight = compositionViewBounds.height + 'px';
+            this._textarea.style.width = width + 'px';
+            this._textarea.style.height = height + 'px';
+            this._textarea.style.lineHeight = height + 'px';
         }
         if (!dontRecurse) {
             setTimeout(function () { return _this.updateCompositionElements(true); }, 0);
@@ -996,7 +1455,7 @@ var CompositionHelper = (function () {
 }());
 exports.CompositionHelper = CompositionHelper;
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -1013,6 +1472,7 @@ var __extends = (this && this.__extends) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 var Lifecycle_1 = require("./common/Lifecycle");
+var TextDecoder_1 = require("./core/input/TextDecoder");
 function r(low, high) {
     var c = high - low;
     var arr = new Array(c);
@@ -1041,14 +1501,14 @@ exports.TransitionTable = TransitionTable;
 var PRINTABLES = r(0x20, 0x7f);
 var EXECUTABLES = r(0x00, 0x18);
 EXECUTABLES.push(0x19);
-EXECUTABLES.concat(r(0x1c, 0x20));
-var DEFAULT_TRANSITION = 1 << 4 | 0;
+EXECUTABLES.push.apply(EXECUTABLES, r(0x1c, 0x20));
+var NON_ASCII_PRINTABLE = 0xA0;
 exports.VT500_TRANSITION_TABLE = (function () {
     var table = new TransitionTable(4095);
     var states = r(0, 13 + 1);
     var state;
     for (state in states) {
-        for (var code = 0; code < 160; ++code) {
+        for (var code = 0; code <= NON_ASCII_PRINTABLE; ++code) {
             table.add(code, state, 1, 0);
         }
     }
@@ -1086,6 +1546,7 @@ exports.VT500_TRANSITION_TABLE = (function () {
     table.addMany(PRINTABLES, 7, 0, 7);
     table.addMany(EXECUTABLES, 7, 0, 7);
     table.add(0x9c, 7, 0, 0);
+    table.add(0x7f, 7, 0, 7);
     table.add(0x5b, 1, 11, 3);
     table.addMany(r(0x40, 0x7f), 3, 7, 0);
     table.addMany(r(0x30, 0x3a), 3, 8, 4);
@@ -1142,6 +1603,7 @@ exports.VT500_TRANSITION_TABLE = (function () {
     table.addMany(PRINTABLES, 13, 13, 13);
     table.add(0x7f, 13, 0, 13);
     table.addMany([0x1b, 0x9c], 13, 14, 0);
+    table.add(NON_ASCII_PRINTABLE, 8, 5, 8);
     return table;
 })();
 var DcsDummy = (function () {
@@ -1178,6 +1640,7 @@ var EscapeSequenceParser = (function (_super) {
         _this._dcsHandlers = Object.create(null);
         _this._activeDcsHandler = null;
         _this._errorHandler = _this._errorHandlerFb;
+        _this.setEscHandler('\\', function () { });
         return _this;
     }
     EscapeSequenceParser.prototype.dispose = function () {
@@ -1190,8 +1653,8 @@ var EscapeSequenceParser = (function (_super) {
         this._errorHandlerFb = null;
         this._printHandler = null;
         this._executeHandlers = null;
-        this._csiHandlers = null;
         this._escHandlers = null;
+        this._csiHandlers = null;
         this._oscHandlers = null;
         this._dcsHandlers = null;
         this._activeDcsHandler = null;
@@ -1213,8 +1676,24 @@ var EscapeSequenceParser = (function (_super) {
     EscapeSequenceParser.prototype.setExecuteHandlerFallback = function (callback) {
         this._executeHandlerFb = callback;
     };
+    EscapeSequenceParser.prototype.addCsiHandler = function (flag, callback) {
+        var index = flag.charCodeAt(0);
+        if (this._csiHandlers[index] === undefined) {
+            this._csiHandlers[index] = [];
+        }
+        var handlerList = this._csiHandlers[index];
+        handlerList.push(callback);
+        return {
+            dispose: function () {
+                var handlerIndex = handlerList.indexOf(callback);
+                if (handlerIndex !== -1) {
+                    handlerList.splice(handlerIndex, 1);
+                }
+            }
+        };
+    };
     EscapeSequenceParser.prototype.setCsiHandler = function (flag, callback) {
-        this._csiHandlers[flag.charCodeAt(0)] = callback;
+        this._csiHandlers[flag.charCodeAt(0)] = [callback];
     };
     EscapeSequenceParser.prototype.clearCsiHandler = function (flag) {
         if (this._csiHandlers[flag.charCodeAt(0)])
@@ -1233,8 +1712,23 @@ var EscapeSequenceParser = (function (_super) {
     EscapeSequenceParser.prototype.setEscHandlerFallback = function (callback) {
         this._escHandlerFb = callback;
     };
+    EscapeSequenceParser.prototype.addOscHandler = function (ident, callback) {
+        if (this._oscHandlers[ident] === undefined) {
+            this._oscHandlers[ident] = [];
+        }
+        var handlerList = this._oscHandlers[ident];
+        handlerList.push(callback);
+        return {
+            dispose: function () {
+                var handlerIndex = handlerList.indexOf(callback);
+                if (handlerIndex !== -1) {
+                    handlerList.splice(handlerIndex, 1);
+                }
+            }
+        };
+    };
     EscapeSequenceParser.prototype.setOscHandler = function (ident, callback) {
-        this._oscHandlers[ident] = callback;
+        this._oscHandlers[ident] = [callback];
     };
     EscapeSequenceParser.prototype.clearOscHandler = function (ident) {
         if (this._oscHandlers[ident])
@@ -1266,7 +1760,7 @@ var EscapeSequenceParser = (function (_super) {
         this._collect = '';
         this._activeDcsHandler = null;
     };
-    EscapeSequenceParser.prototype.parse = function (data) {
+    EscapeSequenceParser.prototype.parse = function (data, length) {
         var code = 0;
         var transition = 0;
         var error = false;
@@ -1279,14 +1773,13 @@ var EscapeSequenceParser = (function (_super) {
         var table = this.TRANSITIONS.table;
         var dcsHandler = this._activeDcsHandler;
         var callback = null;
-        var l = data.length;
-        for (var i = 0; i < l; ++i) {
-            code = data.charCodeAt(i);
+        for (var i = 0; i < length; ++i) {
+            code = data[i];
             if (currentState === 0 && code > 0x1f && code < 0x80) {
                 print = (~print) ? print : i;
                 do
                     i++;
-                while (i < l && data.charCodeAt(i) > 0x1f && data.charCodeAt(i) < 0x80);
+                while (i < length && data[i] > 0x1f && data[i] < 0x80);
                 i--;
                 continue;
             }
@@ -1294,7 +1787,7 @@ var EscapeSequenceParser = (function (_super) {
                 params[params.length - 1] = params[params.length - 1] * 10 + code - 48;
                 continue;
             }
-            transition = (code < 0xa0) ? (table[currentState << 8 | code]) : DEFAULT_TRANSITION;
+            transition = table[currentState << 8 | (code < 0xa0 ? code : NON_ASCII_PRINTABLE)];
             switch (transition >> 4) {
                 case 2:
                     print = (~print) ? print : i;
@@ -1325,10 +1818,6 @@ var EscapeSequenceParser = (function (_super) {
                         switch (currentState) {
                             case 0:
                                 print = (~print) ? print : i;
-                                break;
-                            case 8:
-                                osc += String.fromCharCode(code);
-                                transition |= 8;
                                 break;
                             case 6:
                                 transition |= 6;
@@ -1365,11 +1854,16 @@ var EscapeSequenceParser = (function (_super) {
                     }
                     break;
                 case 7:
-                    callback = this._csiHandlers[code];
-                    if (callback)
-                        callback(params, collect);
-                    else
+                    var handlers = this._csiHandlers[code];
+                    var j = handlers ? handlers.length - 1 : -1;
+                    for (; j >= 0; j--) {
+                        if (handlers[j](params, collect)) {
+                            break;
+                        }
+                    }
+                    if (j < 0) {
                         this._csiHandlerFb(collect, params, code);
+                    }
                     break;
                 case 8:
                     if (code === 0x3b)
@@ -1428,7 +1922,15 @@ var EscapeSequenceParser = (function (_super) {
                     osc = '';
                     break;
                 case 5:
-                    osc += data.charAt(i);
+                    for (var j_1 = i + 1;; j_1++) {
+                        if (j_1 >= length
+                            || (code = data[j_1]) < 0x20
+                            || (code > 0x7f && code <= 0x9f)) {
+                            osc += TextDecoder_1.utf32ToString(data, i, j_1);
+                            i = j_1 - 1;
+                            break;
+                        }
+                    }
                     break;
                 case 6:
                     if (osc && code !== 0x18 && code !== 0x1a) {
@@ -1439,11 +1941,16 @@ var EscapeSequenceParser = (function (_super) {
                         else {
                             var identifier = parseInt(osc.substring(0, idx));
                             var content = osc.substring(idx + 1);
-                            callback = this._oscHandlers[identifier];
-                            if (callback)
-                                callback(content);
-                            else
+                            var handlers_1 = this._oscHandlers[identifier];
+                            var j_2 = handlers_1 ? handlers_1.length - 1 : -1;
+                            for (; j_2 >= 0; j_2--) {
+                                if (handlers_1[j_2](content)) {
+                                    break;
+                                }
+                            }
+                            if (j_2 < 0) {
                                 this._oscHandlerFb(identifier, content);
+                            }
                         }
                     }
                     if (code === 0x1b)
@@ -1457,10 +1964,10 @@ var EscapeSequenceParser = (function (_super) {
             currentState = transition & 15;
         }
         if (currentState === 0 && ~print) {
-            this._printHandler(data, print, data.length);
+            this._printHandler(data, print, length);
         }
         else if (currentState === 13 && ~dcs && dcsHandler) {
-            dcsHandler.put(data, dcs, data.length);
+            dcsHandler.put(data, dcs, length);
         }
         this._osc = osc;
         this._collect = collect;
@@ -1472,7 +1979,7 @@ var EscapeSequenceParser = (function (_super) {
 }(Lifecycle_1.Disposable));
 exports.EscapeSequenceParser = EscapeSequenceParser;
 
-},{"./common/Lifecycle":18}],8:[function(require,module,exports){
+},{"./common/Lifecycle":20,"./core/input/TextDecoder":26}],9:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -1494,35 +2001,24 @@ var Buffer_1 = require("./Buffer");
 var CharWidth_1 = require("./CharWidth");
 var EscapeSequenceParser_1 = require("./EscapeSequenceParser");
 var Lifecycle_1 = require("./common/Lifecycle");
-var BufferLine_1 = require("./BufferLine");
+var TypedArrayUtils_1 = require("./common/TypedArrayUtils");
+var TextDecoder_1 = require("./core/input/TextDecoder");
 var GLEVEL = { '(': 0, ')': 1, '*': 2, '+': 3, '-': 1, '.': 2 };
-var RequestTerminfo = (function () {
-    function RequestTerminfo(_terminal) {
-        this._terminal = _terminal;
-    }
-    RequestTerminfo.prototype.hook = function (collect, params, flag) {
-        this._data = '';
-    };
-    RequestTerminfo.prototype.put = function (data, start, end) {
-        this._data += data.substring(start, end);
-    };
-    RequestTerminfo.prototype.unhook = function () {
-        this._terminal.handler(EscapeSequences_1.C0.ESC + "P0+r" + this._data + EscapeSequences_1.C0.ESC + "\\");
-    };
-    return RequestTerminfo;
-}());
 var DECRQSS = (function () {
     function DECRQSS(_terminal) {
         this._terminal = _terminal;
+        this._data = new Uint32Array(0);
     }
     DECRQSS.prototype.hook = function (collect, params, flag) {
-        this._data = '';
+        this._data = new Uint32Array(0);
     };
     DECRQSS.prototype.put = function (data, start, end) {
-        this._data += data.substring(start, end);
+        this._data = TypedArrayUtils_1.concat(this._data, data.subarray(start, end));
     };
     DECRQSS.prototype.unhook = function () {
-        switch (this._data) {
+        var data = TextDecoder_1.utf32ToString(this._data);
+        this._data = new Uint32Array(0);
+        switch (data) {
             case '"q':
                 return this._terminal.handler(EscapeSequences_1.C0.ESC + "P1$r0\"q" + EscapeSequences_1.C0.ESC + "\\");
             case '"p':
@@ -1539,8 +2035,8 @@ var DECRQSS = (function () {
                 style -= this._terminal.getOption('cursorBlink');
                 return this._terminal.handler(EscapeSequences_1.C0.ESC + "P1$r" + style + " q" + EscapeSequences_1.C0.ESC + "\\");
             default:
-                this._terminal.error('Unknown DCS $q %s', this._data);
-                this._terminal.handler(EscapeSequences_1.C0.ESC + "P0$r" + this._data + EscapeSequences_1.C0.ESC + "\\");
+                this._terminal.error('Unknown DCS $q %s', data);
+                this._terminal.handler(EscapeSequences_1.C0.ESC + "P0$r" + EscapeSequences_1.C0.ESC + "\\");
         }
     };
     return DECRQSS;
@@ -1552,8 +2048,9 @@ var InputHandler = (function (_super) {
         var _this = _super.call(this) || this;
         _this._terminal = _terminal;
         _this._parser = _parser;
+        _this._parseBuffer = new Uint32Array(4096);
+        _this._stringDecoder = new TextDecoder_1.StringToUtf32();
         _this.register(_this._parser);
-        _this._surrogateHigh = '';
         _this._parser.setCsiHandlerFallback(function (collect, params, flag) {
             _this._terminal.error('Unknown CSI code: ', { collect: collect, params: params, flag: String.fromCharCode(flag) });
         });
@@ -1651,7 +2148,6 @@ var InputHandler = (function (_super) {
             return state;
         });
         _this._parser.setDcsHandler('$q', new DECRQSS(_this._terminal));
-        _this._parser.setDcsHandler('+q', new RequestTerminfo(_this._terminal));
         return _this;
     }
     InputHandler.prototype.dispose = function () {
@@ -1668,20 +2164,21 @@ var InputHandler = (function (_super) {
         if (this._terminal.debug) {
             this._terminal.log('data: ' + data);
         }
-        if (this._surrogateHigh) {
-            data = this._surrogateHigh + data;
-            this._surrogateHigh = '';
+        if (this._parseBuffer.length < data.length) {
+            this._parseBuffer = new Uint32Array(data.length);
         }
-        this._parser.parse(data);
+        for (var i = 0; i < data.length; ++i) {
+            this._parseBuffer[i] = data.charCodeAt(i);
+        }
+        this._parser.parse(this._parseBuffer, this._stringDecoder.decode(data, this._parseBuffer));
         buffer = this._terminal.buffer;
         if (buffer.x !== cursorStartX || buffer.y !== cursorStartY) {
             this._terminal.emit('cursormove');
         }
     };
     InputHandler.prototype.print = function (data, start, end) {
-        var char;
         var code;
-        var low;
+        var char;
         var chWidth;
         var buffer = this._terminal.buffer;
         var charset = this._terminal.charset;
@@ -1692,25 +2189,16 @@ var InputHandler = (function (_super) {
         var curAttr = this._terminal.curAttr;
         var bufferRow = buffer.lines.get(buffer.y + buffer.ybase);
         this._terminal.updateRange(buffer.y);
-        for (var stringPosition = start; stringPosition < end; ++stringPosition) {
-            char = data.charAt(stringPosition);
-            code = data.charCodeAt(stringPosition);
-            if (0xD800 <= code && code <= 0xDBFF) {
-                low = data.charCodeAt(stringPosition + 1);
-                if (isNaN(low)) {
-                    this._surrogateHigh = char;
-                    continue;
-                }
-                code = ((code - 0xD800) * 0x400) + (low - 0xDC00) + 0x10000;
-                char += data.charAt(stringPosition + 1);
-            }
-            if (0xDC00 <= code && code <= 0xDFFF) {
-                continue;
-            }
+        for (var pos = start; pos < end; ++pos) {
+            code = data[pos];
+            char = TextDecoder_1.stringFromCodePoint(code);
             chWidth = CharWidth_1.wcwidth(code);
-            if (charset) {
-                char = charset[char] || char;
-                code = char.charCodeAt(0);
+            if (code < 127 && charset) {
+                var ch = charset[char];
+                if (ch) {
+                    code = ch.charCodeAt(0);
+                    char = ch;
+                }
             }
             if (screenReaderMode) {
                 this._terminal.emit('a11y.char', char);
@@ -1723,11 +2211,13 @@ var InputHandler = (function (_super) {
                         if (chMinusTwo) {
                             chMinusTwo[Buffer_1.CHAR_DATA_CHAR_INDEX] += char;
                             chMinusTwo[Buffer_1.CHAR_DATA_CODE_INDEX] = code;
+                            bufferRow.set(buffer.x - 2, chMinusTwo);
                         }
                     }
                     else {
                         chMinusOne[Buffer_1.CHAR_DATA_CHAR_INDEX] += char;
                         chMinusOne[Buffer_1.CHAR_DATA_CODE_INDEX] = code;
+                        bufferRow.set(buffer.x - 1, chMinusOne);
                     }
                 }
                 continue;
@@ -1752,23 +2242,26 @@ var InputHandler = (function (_super) {
                 }
             }
             if (insertMode) {
-                for (var moves = 0; moves < chWidth; ++moves) {
-                    var removed = bufferRow.pop();
-                    var chMinusTwo = bufferRow.get(buffer.x - 2);
-                    if (removed[Buffer_1.CHAR_DATA_WIDTH_INDEX] === 0
-                        && chMinusTwo
-                        && chMinusTwo[Buffer_1.CHAR_DATA_WIDTH_INDEX] === 2) {
-                        bufferRow.set(this._terminal.cols - 2, [curAttr, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE]);
-                    }
-                    bufferRow.splice(buffer.x, 0, [curAttr, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE]);
+                bufferRow.insertCells(buffer.x, chWidth, [curAttr, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE]);
+                var lastCell = bufferRow.get(cols - 1);
+                if (lastCell[Buffer_1.CHAR_DATA_WIDTH_INDEX] === 2) {
+                    bufferRow.set(cols - 1, [curAttr, Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE]);
                 }
             }
             bufferRow.set(buffer.x++, [curAttr, char, chWidth, code]);
-            if (chWidth === 2) {
-                bufferRow.set(buffer.x++, [curAttr, '', 0, undefined]);
+            if (chWidth > 0) {
+                while (--chWidth) {
+                    bufferRow.set(buffer.x++, [curAttr, '', 0, undefined]);
+                }
             }
         }
         this._terminal.updateRange(buffer.y);
+    };
+    InputHandler.prototype.addCsiHandler = function (flag, callback) {
+        return this._parser.addCsiHandler(flag, callback);
+    };
+    InputHandler.prototype.addOscHandler = function (ident, callback) {
+        return this._parser.addOscHandler(ident, callback);
     };
     InputHandler.prototype.bell = function () {
         this._terminal.bell();
@@ -1918,8 +2411,16 @@ var InputHandler = (function (_super) {
             this._terminal.buffer.x = this._terminal.buffer.nextStop();
         }
     };
-    InputHandler.prototype._eraseInBufferLine = function (y, start, end) {
-        this._terminal.buffer.lines.get(this._terminal.buffer.ybase + y).replaceCells(start, end, [this._terminal.eraseAttr(), Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE]);
+    InputHandler.prototype._eraseInBufferLine = function (y, start, end, clearWrap) {
+        if (clearWrap === void 0) { clearWrap = false; }
+        var line = this._terminal.buffer.lines.get(this._terminal.buffer.ybase + y);
+        line.replaceCells(start, end, [this._terminal.eraseAttr(), Buffer_1.NULL_CELL_CHAR, Buffer_1.NULL_CELL_WIDTH, Buffer_1.NULL_CELL_CODE]);
+        if (clearWrap) {
+            line.isWrapped = false;
+        }
+    };
+    InputHandler.prototype._resetBufferLine = function (y) {
+        this._eraseInBufferLine(y, 0, this._terminal.cols, true);
     };
     InputHandler.prototype.eraseInDisplay = function (params) {
         var j;
@@ -1927,18 +2428,21 @@ var InputHandler = (function (_super) {
             case 0:
                 j = this._terminal.buffer.y;
                 this._terminal.updateRange(j);
-                this._eraseInBufferLine(j++, this._terminal.buffer.x, this._terminal.cols);
+                this._eraseInBufferLine(j++, this._terminal.buffer.x, this._terminal.cols, this._terminal.buffer.x === 0);
                 for (; j < this._terminal.rows; j++) {
-                    this._eraseInBufferLine(j, 0, this._terminal.cols);
+                    this._resetBufferLine(j);
                 }
                 this._terminal.updateRange(j);
                 break;
             case 1:
                 j = this._terminal.buffer.y;
                 this._terminal.updateRange(j);
-                this._eraseInBufferLine(j, 0, this._terminal.buffer.x + 1);
+                this._eraseInBufferLine(j, 0, this._terminal.buffer.x + 1, true);
+                if (this._terminal.buffer.x + 1 >= this._terminal.cols) {
+                    this._terminal.buffer.lines.get(j + 1).isWrapped = false;
+                }
                 while (j--) {
-                    this._eraseInBufferLine(j, 0, this._terminal.cols);
+                    this._resetBufferLine(j);
                 }
                 this._terminal.updateRange(0);
                 break;
@@ -1946,7 +2450,7 @@ var InputHandler = (function (_super) {
                 j = this._terminal.rows;
                 this._terminal.updateRange(j - 1);
                 while (j--) {
-                    this._eraseInBufferLine(j, 0, this._terminal.cols);
+                    this._resetBufferLine(j);
                 }
                 this._terminal.updateRange(0);
                 break;
@@ -1986,7 +2490,7 @@ var InputHandler = (function (_super) {
         var scrollBottomAbsolute = this._terminal.rows - 1 + buffer.ybase - scrollBottomRowsOffset + 1;
         while (param--) {
             buffer.lines.splice(scrollBottomAbsolute - 1, 1);
-            buffer.lines.splice(row, 0, BufferLine_1.BufferLine.blankLine(this._terminal.cols, this._terminal.eraseAttr()));
+            buffer.lines.splice(row, 0, buffer.getBlankLine(this._terminal.eraseAttr()));
         }
         this._terminal.updateRange(buffer.y);
         this._terminal.updateRange(buffer.scrollBottom);
@@ -2003,7 +2507,7 @@ var InputHandler = (function (_super) {
         j = this._terminal.rows - 1 + buffer.ybase - j;
         while (param--) {
             buffer.lines.splice(row, 1);
-            buffer.lines.splice(j, 0, BufferLine_1.BufferLine.blankLine(this._terminal.cols, this._terminal.eraseAttr()));
+            buffer.lines.splice(j, 0, buffer.getBlankLine(this._terminal.eraseAttr()));
         }
         this._terminal.updateRange(buffer.y);
         this._terminal.updateRange(buffer.scrollBottom);
@@ -2017,7 +2521,7 @@ var InputHandler = (function (_super) {
         var buffer = this._terminal.buffer;
         while (param--) {
             buffer.lines.splice(buffer.ybase + buffer.scrollTop, 1);
-            buffer.lines.splice(buffer.ybase + buffer.scrollBottom, 0, BufferLine_1.BufferLine.blankLine(this._terminal.cols, Buffer_1.DEFAULT_ATTR));
+            buffer.lines.splice(buffer.ybase + buffer.scrollBottom, 0, buffer.getBlankLine(Buffer_1.DEFAULT_ATTR));
         }
         this._terminal.updateRange(buffer.scrollTop);
         this._terminal.updateRange(buffer.scrollBottom);
@@ -2028,7 +2532,7 @@ var InputHandler = (function (_super) {
             var buffer = this._terminal.buffer;
             while (param--) {
                 buffer.lines.splice(buffer.ybase + buffer.scrollBottom, 1);
-                buffer.lines.splice(buffer.ybase + buffer.scrollBottom, 0, BufferLine_1.BufferLine.blankLine(this._terminal.cols, Buffer_1.DEFAULT_ATTR));
+                buffer.lines.splice(buffer.ybase + buffer.scrollBottom, 0, buffer.getBlankLine(Buffer_1.DEFAULT_ATTR));
             }
             this._terminal.updateRange(buffer.scrollTop);
             this._terminal.updateRange(buffer.scrollBottom);
@@ -2184,7 +2688,9 @@ var InputHandler = (function (_super) {
                 case 66:
                     this._terminal.log('Serial port requested application keypad.');
                     this._terminal.applicationKeypad = true;
-                    this._terminal.viewport.syncScrollArea();
+                    if (this._terminal.viewport) {
+                        this._terminal.viewport.syncScrollArea();
+                    }
                     break;
                 case 9:
                 case 1000:
@@ -2194,8 +2700,12 @@ var InputHandler = (function (_super) {
                     this._terminal.vt200Mouse = params[0] === 1000;
                     this._terminal.normalMouse = params[0] > 1000;
                     this._terminal.mouseEvents = true;
-                    this._terminal.element.classList.add('enable-mouse-events');
-                    this._terminal.selectionManager.disable();
+                    if (this._terminal.element) {
+                        this._terminal.element.classList.add('enable-mouse-events');
+                    }
+                    if (this._terminal.selectionManager) {
+                        this._terminal.selectionManager.disable();
+                    }
                     this._terminal.log('Binding to mouse events.');
                     break;
                 case 1004:
@@ -2213,11 +2723,18 @@ var InputHandler = (function (_super) {
                 case 25:
                     this._terminal.cursorHidden = false;
                     break;
+                case 1048:
+                    this.saveCursor(params);
+                    break;
                 case 1049:
+                    this.saveCursor(params);
                 case 47:
                 case 1047:
-                    this._terminal.buffers.activateAltBuffer();
-                    this._terminal.viewport.syncScrollArea();
+                    this._terminal.buffers.activateAltBuffer(this._terminal.eraseAttr());
+                    this._terminal.refresh(0, this._terminal.rows - 1);
+                    if (this._terminal.viewport) {
+                        this._terminal.viewport.syncScrollArea();
+                    }
                     this._terminal.showCursor();
                     break;
                 case 2004:
@@ -2264,7 +2781,9 @@ var InputHandler = (function (_super) {
                 case 66:
                     this._terminal.log('Switching back to normal keypad.');
                     this._terminal.applicationKeypad = false;
-                    this._terminal.viewport.syncScrollArea();
+                    if (this._terminal.viewport) {
+                        this._terminal.viewport.syncScrollArea();
+                    }
                     break;
                 case 9:
                 case 1000:
@@ -2274,8 +2793,12 @@ var InputHandler = (function (_super) {
                     this._terminal.vt200Mouse = false;
                     this._terminal.normalMouse = false;
                     this._terminal.mouseEvents = false;
-                    this._terminal.element.classList.remove('enable-mouse-events');
-                    this._terminal.selectionManager.enable();
+                    if (this._terminal.element) {
+                        this._terminal.element.classList.remove('enable-mouse-events');
+                    }
+                    if (this._terminal.selectionManager) {
+                        this._terminal.selectionManager.enable();
+                    }
                     break;
                 case 1004:
                     this._terminal.sendFocus = false;
@@ -2292,12 +2815,20 @@ var InputHandler = (function (_super) {
                 case 25:
                     this._terminal.cursorHidden = true;
                     break;
+                case 1048:
+                    this.restoreCursor(params);
+                    break;
                 case 1049:
                 case 47:
                 case 1047:
                     this._terminal.buffers.activateNormalBuffer();
+                    if (params[0] === 1049) {
+                        this.restoreCursor(params);
+                    }
                     this._terminal.refresh(0, this._terminal.rows - 1);
-                    this._terminal.viewport.syncScrollArea();
+                    if (this._terminal.viewport) {
+                        this._terminal.viewport.syncScrollArea();
+                    }
                     this._terminal.showCursor();
                     break;
                 case 2004:
@@ -2459,7 +2990,9 @@ var InputHandler = (function (_super) {
             this._terminal.originMode = false;
             this._terminal.wraparoundMode = true;
             this._terminal.applicationKeypad = false;
-            this._terminal.viewport.syncScrollArea();
+            if (this._terminal.viewport) {
+                this._terminal.viewport.syncScrollArea();
+            }
             this._terminal.applicationCursor = false;
             this._terminal.buffer.scrollTop = 0;
             this._terminal.buffer.scrollBottom = this._terminal.rows - 1;
@@ -2502,12 +3035,12 @@ var InputHandler = (function (_super) {
     InputHandler.prototype.saveCursor = function (params) {
         this._terminal.buffer.savedX = this._terminal.buffer.x;
         this._terminal.buffer.savedY = this._terminal.buffer.y;
-        this._terminal.savedCurAttr = this._terminal.curAttr;
+        this._terminal.buffer.savedCurAttr = this._terminal.curAttr;
     };
     InputHandler.prototype.restoreCursor = function (params) {
         this._terminal.buffer.x = this._terminal.buffer.savedX || 0;
         this._terminal.buffer.y = this._terminal.buffer.savedY || 0;
-        this._terminal.curAttr = this._terminal.savedCurAttr || Buffer_1.DEFAULT_ATTR;
+        this._terminal.curAttr = this._terminal.buffer.savedCurAttr || Buffer_1.DEFAULT_ATTR;
     };
     InputHandler.prototype.setTitle = function (data) {
         this._terminal.handleTitle(data);
@@ -2561,7 +3094,7 @@ var InputHandler = (function (_super) {
 }(Lifecycle_1.Disposable));
 exports.InputHandler = InputHandler;
 
-},{"./Buffer":2,"./BufferLine":3,"./CharWidth":5,"./EscapeSequenceParser":7,"./common/Lifecycle":18,"./common/data/EscapeSequences":19,"./core/data/Charsets":20}],9:[function(require,module,exports){
+},{"./Buffer":2,"./CharWidth":6,"./EscapeSequenceParser":8,"./common/Lifecycle":20,"./common/TypedArrayUtils":21,"./common/data/EscapeSequences":22,"./core/data/Charsets":24,"./core/input/TextDecoder":26}],10:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -2692,7 +3225,13 @@ var Linkifier = (function (_super) {
             }
             stringIndex = text.indexOf(uri, stringIndex + 1);
             rex.lastIndex = stringIndex + uri.length;
+            if (stringIndex < 0) {
+                return "break";
+            }
             var bufferIndex = this_1._terminal.buffer.stringIndexToBufferIndex(rowIndex, stringIndex);
+            if (bufferIndex[0] < 0) {
+                return "break";
+            }
             var line = this_1._terminal.buffer.lines.get(bufferIndex[0]);
             var char = line.get(bufferIndex[1]);
             var fg;
@@ -2767,7 +3306,7 @@ var Linkifier = (function (_super) {
 }(EventEmitter_1.EventEmitter));
 exports.Linkifier = Linkifier;
 
-},{"./Buffer":2,"./CharWidth":5,"./common/EventEmitter":17,"./ui/MouseZoneManager":49}],10:[function(require,module,exports){
+},{"./Buffer":2,"./CharWidth":6,"./common/EventEmitter":19,"./ui/MouseZoneManager":59}],11:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -2783,8 +3322,8 @@ var __extends = (this && this.__extends) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-var MouseHelper_1 = require("./utils/MouseHelper");
-var Browser = require("./shared/utils/Browser");
+var MouseHelper_1 = require("./ui/MouseHelper");
+var Browser = require("./core/Platform");
 var EventEmitter_1 = require("./common/EventEmitter");
 var SelectionModel_1 = require("./SelectionModel");
 var Buffer_1 = require("./Buffer");
@@ -2879,7 +3418,7 @@ var SelectionManager = (function (_super) {
                 }
             }
             else {
-                var startRowEndCol = start[1] === end[1] ? end[0] : null;
+                var startRowEndCol = start[1] === end[1] ? end[0] : undefined;
                 result.push(this._buffer.translateBufferLineToString(start[1], true, start[0], startRowEndCol));
                 for (var i = start[1] + 1; i <= end[1] - 1; i++) {
                     var bufferLine = this._buffer.lines.get(i);
@@ -2942,9 +3481,13 @@ var SelectionManager = (function (_super) {
         if (!start || !end) {
             return false;
         }
+        return this._areCoordsInSelection(coords, start, end);
+    };
+    SelectionManager.prototype._areCoordsInSelection = function (coords, start, end) {
         return (coords[1] > start[1] && coords[1] < end[1]) ||
-            (start[1] === end[1] && coords[1] === start[1] && coords[0] > start[0] && coords[0] < end[0]) ||
-            (start[1] < end[1] && coords[1] === end[1] && coords[0] < end[0]);
+            (start[1] === end[1] && coords[1] === start[1] && coords[0] >= start[0] && coords[0] < end[0]) ||
+            (start[1] < end[1] && coords[1] === end[1] && coords[0] < end[0]) ||
+            (start[1] < end[1] && coords[1] === start[1] && coords[0] >= start[0]);
     };
     SelectionManager.prototype.selectWordAtCursor = function (event) {
         var coords = this._getMouseBufferCoords(event);
@@ -2975,7 +3518,7 @@ var SelectionManager = (function (_super) {
         }
     };
     SelectionManager.prototype._getMouseBufferCoords = function (event) {
-        var coords = this._terminal.mouseHelper.getCoords(event, this._terminal.screenElement, this._charMeasure, this._terminal.options.lineHeight, this._terminal.cols, this._terminal.rows, true);
+        var coords = this._terminal.mouseHelper.getCoords(event, this._terminal.screenElement, this._charMeasure, this._terminal.cols, this._terminal.rows, true);
         if (!coords) {
             return null;
         }
@@ -3338,7 +3881,7 @@ var SelectionManager = (function (_super) {
 }(EventEmitter_1.EventEmitter));
 exports.SelectionManager = SelectionManager;
 
-},{"./Buffer":2,"./SelectionModel":11,"./common/EventEmitter":17,"./handlers/AltClickHandler":22,"./shared/utils/Browser":46,"./utils/MouseHelper":53}],11:[function(require,module,exports){
+},{"./Buffer":2,"./SelectionModel":12,"./common/EventEmitter":19,"./core/Platform":23,"./handlers/AltClickHandler":27,"./ui/MouseHelper":58}],12:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var SelectionModel = (function () {
@@ -3418,7 +3961,7 @@ var SelectionModel = (function () {
 }());
 exports.SelectionModel = SelectionModel;
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_BELL_SOUND = 'data:audio/wav;base64,UklGRigBAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQBAADpAFgCwAMlBZoG/wdmCcoKRAypDQ8PbRDBEQQTOxRtFYcWlBePGIUZXhoiG88bcBz7HHIdzh0WHlMeZx51HmkeUx4WHs8dah0AHXwc3hs9G4saxRnyGBIYGBcQFv8U4RPAEoYRQBACD70NWwwHC6gJOwjWBloF7gOBAhABkf8b/qv8R/ve+Xf4Ife79W/0JfPZ8Z/wde9N7ijtE+wU6xvqM+lb6H7nw+YX5mrlxuQz5Mzje+Ma49fioeKD4nXiYeJy4pHitOL04j/jn+MN5IPkFOWs5U3mDefM55/ogOl36m7rdOyE7abuyu8D8Unyj/Pg9D/2qfcb+Yn6/vuK/Qj/lAAlAg==';
@@ -3426,23 +3969,32 @@ var SoundManager = (function () {
     function SoundManager(_terminal) {
         this._terminal = _terminal;
     }
+    Object.defineProperty(SoundManager, "audioContext", {
+        get: function () {
+            if (!SoundManager._audioContext) {
+                var audioContextCtor = window.AudioContext || window.webkitAudioContext;
+                if (!audioContextCtor) {
+                    console.warn('Web Audio API is not supported by this browser. Consider upgrading to the latest version');
+                    return null;
+                }
+                SoundManager._audioContext = new audioContextCtor();
+            }
+            return SoundManager._audioContext;
+        },
+        enumerable: true,
+        configurable: true
+    });
     SoundManager.prototype.playBellSound = function () {
-        var audioContextCtor = window.AudioContext || window.webkitAudioContext;
-        if (!this._audioContext && audioContextCtor) {
-            this._audioContext = new audioContextCtor();
+        var ctx = SoundManager.audioContext;
+        if (!ctx) {
+            return;
         }
-        if (this._audioContext) {
-            var bellAudioSource_1 = this._audioContext.createBufferSource();
-            var context_1 = this._audioContext;
-            this._audioContext.decodeAudioData(this._base64ToArrayBuffer(this._removeMimeType(this._terminal.options.bellSound)), function (buffer) {
-                bellAudioSource_1.buffer = buffer;
-                bellAudioSource_1.connect(context_1.destination);
-                bellAudioSource_1.start(0);
-            });
-        }
-        else {
-            console.warn('Sorry, but the Web Audio API is not supported by your browser. Please, consider upgrading to the latest version');
-        }
+        var bellAudioSource = ctx.createBufferSource();
+        ctx.decodeAudioData(this._base64ToArrayBuffer(this._removeMimeType(this._terminal.options.bellSound)), function (buffer) {
+            bellAudioSource.buffer = buffer;
+            bellAudioSource.connect(ctx.destination);
+            bellAudioSource.start(0);
+        });
     };
     SoundManager.prototype._base64ToArrayBuffer = function (base64) {
         var binaryString = window.atob(base64);
@@ -3461,14 +4013,14 @@ var SoundManager = (function () {
 }());
 exports.SoundManager = SoundManager;
 
-},{}],13:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.blankLine = 'Blank line';
 exports.promptLabel = 'Terminal input';
 exports.tooMuchOutput = 'Too much output to announce, navigate to rows manually to read';
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -3489,18 +4041,17 @@ var Buffer_1 = require("./Buffer");
 var CompositionHelper_1 = require("./CompositionHelper");
 var EventEmitter_1 = require("./common/EventEmitter");
 var Viewport_1 = require("./Viewport");
-var Clipboard_1 = require("./handlers/Clipboard");
+var Clipboard_1 = require("./ui/Clipboard");
 var EscapeSequences_1 = require("./common/data/EscapeSequences");
 var InputHandler_1 = require("./InputHandler");
 var Renderer_1 = require("./renderer/Renderer");
 var Linkifier_1 = require("./Linkifier");
 var SelectionManager_1 = require("./SelectionManager");
 var CharMeasure_1 = require("./ui/CharMeasure");
-var Browser = require("./shared/utils/Browser");
+var Browser = require("./core/Platform");
 var Lifecycle_1 = require("./ui/Lifecycle");
 var Strings = require("./Strings");
-var MouseHelper_1 = require("./utils/MouseHelper");
-var Clone_1 = require("./utils/Clone");
+var MouseHelper_1 = require("./ui/MouseHelper");
 var SoundManager_1 = require("./SoundManager");
 var ColorManager_1 = require("./renderer/ColorManager");
 var MouseZoneManager_1 = require("./ui/MouseZoneManager");
@@ -3509,10 +4060,14 @@ var ScreenDprMonitor_1 = require("./ui/ScreenDprMonitor");
 var CharAtlasCache_1 = require("./renderer/atlas/CharAtlasCache");
 var DomRenderer_1 = require("./renderer/dom/DomRenderer");
 var Keyboard_1 = require("./core/input/Keyboard");
-var BufferLine_1 = require("./BufferLine");
+var Clone_1 = require("./common/Clone");
+var WebglRenderer_1 = require("./renderer/webgl/WebglRenderer");
+var CharWidth_1 = require("./CharWidth");
 var document = (typeof window !== 'undefined') ? window.document : null;
 var WRITE_BUFFER_PAUSE_THRESHOLD = 5;
-var WRITE_BATCH_SIZE = 300;
+var WRITE_TIMEOUT_MS = 12;
+var MINIMUM_COLS = 2;
+var MINIMUM_ROWS = 1;
 var CONSTRUCTOR_ONLY_OPTIONS = ['cols', 'rows'];
 var DEFAULT_OPTIONS = {
     cols: 80,
@@ -3553,6 +4108,7 @@ var Terminal = (function (_super) {
         if (options === void 0) { options = {}; }
         var _this = _super.call(this) || this;
         _this.browser = Browser;
+        _this._blankLine = null;
         _this.options = Clone_1.clone(options);
         _this._setup();
         return _this;
@@ -3578,8 +4134,8 @@ var Terminal = (function (_super) {
             }
         });
         this._parent = document ? document.body : null;
-        this.cols = this.options.cols;
-        this.rows = this.options.rows;
+        this.cols = Math.max(this.options.cols, MINIMUM_COLS);
+        this.rows = Math.max(this.options.rows, MINIMUM_ROWS);
         if (this.options.handler) {
             this.on('data', this.options.handler);
         }
@@ -3633,7 +4189,7 @@ var Terminal = (function (_super) {
     };
     Object.defineProperty(Terminal.prototype, "isFocused", {
         get: function () {
-            return document.activeElement === this.textarea;
+            return document.activeElement === this.textarea && document.hasFocus();
         },
         enumerable: true,
         configurable: true
@@ -3739,17 +4295,9 @@ var Terminal = (function (_super) {
                     this.renderer.onResize(this.cols, this.rows);
                     this.refresh(0, this.rows - 1);
                 }
+                break;
             case 'rendererType':
-                if (this.renderer) {
-                    this.unregister(this.renderer);
-                    this.renderer.dispose();
-                    this.renderer = null;
-                }
-                this._setupRenderer();
-                this.renderer.onCharSizeChanged();
-                if (this._theme) {
-                    this.renderer.setTheme(this._theme);
-                }
+                this.recreateRenderer();
                 break;
             case 'scrollback':
                 this.buffers.resize(this.cols, this.rows);
@@ -3777,6 +4325,19 @@ var Terminal = (function (_super) {
         if (this.renderer) {
             this.renderer.onOptionsChanged();
         }
+    };
+    Terminal.prototype.recreateRenderer = function () {
+        if (this.renderer) {
+            this.unregister(this.renderer);
+            this.renderer.dispose();
+            this.renderer = null;
+        }
+        this._setupRenderer();
+        this.renderer.onCharSizeChanged();
+        if (this._theme) {
+            this.renderer.setTheme(this._theme);
+        }
+        this.mouseHelper.setRenderer(this.renderer);
     };
     Terminal.prototype._onTextAreaFocus = function (ev) {
         if (this.sendFocus) {
@@ -3814,19 +4375,19 @@ var Terminal = (function (_super) {
         if (Browser.isFirefox) {
             this.register(Lifecycle_1.addDisposableDomListener(this.element, 'mousedown', function (event) {
                 if (event.button === 2) {
-                    Clipboard_1.rightClickHandler(event, _this.textarea, _this.selectionManager, _this.options.rightClickSelectsWord);
+                    Clipboard_1.rightClickHandler(event, _this, _this.selectionManager, _this.options.rightClickSelectsWord);
                 }
             }));
         }
         else {
             this.register(Lifecycle_1.addDisposableDomListener(this.element, 'contextmenu', function (event) {
-                Clipboard_1.rightClickHandler(event, _this.textarea, _this.selectionManager, _this.options.rightClickSelectsWord);
+                Clipboard_1.rightClickHandler(event, _this, _this.selectionManager, _this.options.rightClickSelectsWord);
             }));
         }
         if (Browser.isLinux) {
             this.register(Lifecycle_1.addDisposableDomListener(this.element, 'auxclick', function (event) {
                 if (event.button === 1) {
-                    Clipboard_1.moveTextAreaUnderMouseCursor(event, _this.textarea);
+                    Clipboard_1.moveTextAreaUnderMouseCursor(event, _this);
                 }
             }));
         }
@@ -3852,13 +4413,33 @@ var Terminal = (function (_super) {
             }
             self._keyUp(ev);
         }, true));
+        this.register(Lifecycle_1.addDisposableDomListener(this.textarea, 'input', function (ev) { return _this._onInput(ev); }, true));
         this.register(Lifecycle_1.addDisposableDomListener(this.textarea, 'keydown', function (ev) { return _this._keyDown(ev); }, true));
         this.register(Lifecycle_1.addDisposableDomListener(this.textarea, 'keypress', function (ev) { return _this._keyPress(ev); }, true));
         this.register(Lifecycle_1.addDisposableDomListener(this.textarea, 'compositionstart', function () { return _this._compositionHelper.compositionstart(); }));
         this.register(Lifecycle_1.addDisposableDomListener(this.textarea, 'compositionupdate', function (e) { return _this._compositionHelper.compositionupdate(e); }));
         this.register(Lifecycle_1.addDisposableDomListener(this.textarea, 'compositionend', function () { return _this._compositionHelper.compositionend(); }));
-        this.register(this.addDisposableListener('refresh', function () { return _this._compositionHelper.updateCompositionElements(); }));
-        this.register(this.addDisposableListener('refresh', function (data) { return _this._queueLinkification(data.start, data.end); }));
+        this.register(this.addDisposableListener('refresh', function (data) { return _this._postRefresh(data); }));
+    };
+    Terminal.prototype._postRefresh = function (data) {
+        if (this._compositionHelper.isComposing) {
+            this._compositionHelper.updateCompositionElements();
+        }
+        else {
+            this._updateTextArea();
+        }
+        this._queueLinkification(data.start, data.end);
+    };
+    Terminal.prototype._updateTextArea = function () {
+        var cellHeight = Math.ceil(this.charMeasure.height * this.options.lineHeight);
+        var cursorTop = this.buffer.y * cellHeight;
+        var cursorLeft = this.buffer.x * this.charMeasure.width;
+        var _a = this.charMeasure, width = _a.width, height = _a.height;
+        this.textarea.style.left = cursorLeft + 'px';
+        this.textarea.style.top = cursorTop + 'px';
+        this.textarea.style.width = width + 'px';
+        this.textarea.style.height = height + 'px';
+        this.textarea.style.lineHeight = height + 'px';
     };
     Terminal.prototype.open = function (parent) {
         var _this = this;
@@ -3911,12 +4492,12 @@ var Terminal = (function (_super) {
         this._helperContainer.appendChild(this._compositionView);
         this.charMeasure = new CharMeasure_1.CharMeasure(document, this._helperContainer);
         this.element.appendChild(fragment);
-        this._setupRenderer();
         this._theme = this.options.theme;
         this.options.theme = null;
         this.viewport = new Viewport_1.Viewport(this, this._viewportElement, this._viewportScrollArea, this.charMeasure);
-        this.viewport.onThemeChanged(this.renderer.colorManager.colors);
         this.register(this.viewport);
+        this._setupRenderer();
+        this.viewport.onThemeChanged(this.renderer.colorManager.colors);
         this.register(this.addDisposableListener('cursormove', function () { return _this.renderer.onCursorMove(); }));
         this.register(this.addDisposableListener('resize', function () { return _this.renderer.onResize(_this.cols, _this.rows); }));
         this.register(this.addDisposableListener('blur', function () { return _this.renderer.onBlur(); }));
@@ -3924,7 +4505,6 @@ var Terminal = (function (_super) {
         this.register(this.addDisposableListener('dprchange', function () { return _this.renderer.onWindowResize(window.devicePixelRatio); }));
         this.register(Lifecycle_1.addDisposableDomListener(window, 'resize', function () { return _this.renderer.onWindowResize(window.devicePixelRatio); }));
         this.register(this.charMeasure.addDisposableListener('charsizechanged', function () { return _this.renderer.onCharSizeChanged(); }));
-        this.register(this.renderer.addDisposableListener('resize', function (dimensions) { return _this.viewport.syncScrollArea(); }));
         this.selectionManager = new SelectionManager_1.SelectionManager(this, this.charMeasure);
         this.register(Lifecycle_1.addDisposableDomListener(this.element, 'mousedown', function (e) { return _this.selectionManager.onMouseDown(e); }));
         this.register(this.selectionManager.addDisposableListener('refresh', function (data) { return _this.renderer.onSelectionChanged(data.start, data.end, data.columnSelectMode); }));
@@ -3939,6 +4519,13 @@ var Terminal = (function (_super) {
         }));
         this.register(Lifecycle_1.addDisposableDomListener(this._viewportElement, 'scroll', function () { return _this.selectionManager.refresh(); }));
         this.mouseHelper = new MouseHelper_1.MouseHelper(this.renderer);
+        this.element.classList.toggle('enable-mouse-events', this.mouseEvents);
+        if (this.mouseEvents) {
+            this.selectionManager.disable();
+        }
+        else {
+            this.selectionManager.enable();
+        }
         if (this.options.screenReaderMode) {
             this._accessibilityManager = new AccessibilityManager_1.AccessibilityManager(this);
         }
@@ -3948,15 +4535,20 @@ var Terminal = (function (_super) {
         this.bindMouse();
     };
     Terminal.prototype._setupRenderer = function () {
+        var _this = this;
         switch (this.options.rendererType) {
             case 'canvas':
-                this.renderer = new Renderer_1.Renderer(this, this.options.theme);
+                this.renderer = new Renderer_1.Renderer(this, this._theme);
                 break;
             case 'dom':
-                this.renderer = new DomRenderer_1.DomRenderer(this, this.options.theme);
+                this.renderer = new DomRenderer_1.DomRenderer(this, this._theme);
+                break;
+            case 'webgl':
+                this.renderer = new WebglRenderer_1.WebglRenderer(this, this._theme);
                 break;
             default: throw new Error("Unrecognized rendererType \"" + this.options.rendererType + "\"");
         }
+        this.register(this.renderer.addDisposableListener('resize', function (dimensions) { return _this.viewport.syncScrollArea(); }));
         this.register(this.renderer);
     };
     Terminal.prototype._setTheme = function (theme) {
@@ -3975,7 +4567,7 @@ var Terminal = (function (_super) {
             var button;
             var pos;
             button = getButton(ev);
-            pos = self.mouseHelper.getRawByteCoords(ev, self.screenElement, self.charMeasure, self.options.lineHeight, self.cols, self.rows);
+            pos = self.mouseHelper.getRawByteCoords(ev, self.screenElement, self.charMeasure, self.cols, self.rows);
             if (!pos)
                 return;
             sendEvent(button, pos);
@@ -3992,7 +4584,7 @@ var Terminal = (function (_super) {
         }
         function sendMove(ev) {
             var button = pressed;
-            var pos = self.mouseHelper.getRawByteCoords(ev, self.screenElement, self.charMeasure, self.options.lineHeight, self.cols, self.rows);
+            var pos = self.mouseHelper.getRawByteCoords(ev, self.screenElement, self.charMeasure, self.cols, self.rows);
             if (!pos)
                 return;
             button += 32;
@@ -4121,7 +4713,7 @@ var Terminal = (function (_super) {
                         : 65;
                     break;
                 case 'wheel':
-                    button = ev.wheelDeltaY > 0
+                    button = ev.deltaY < 0
                         ? 64
                         : 65;
                     break;
@@ -4227,10 +4819,10 @@ var Terminal = (function (_super) {
     };
     Terminal.prototype.updateCursorStyle = function (ev) {
         if (this.selectionManager && this.selectionManager.shouldColumnSelect(ev)) {
-            this.element.classList.add('xterm-cursor-crosshair');
+            this.element.classList.add('column-select');
         }
         else {
-            this.element.classList.remove('xterm-cursor-crosshair');
+            this.element.classList.remove('column-select');
         }
     };
     Terminal.prototype.showCursor = function () {
@@ -4240,16 +4832,28 @@ var Terminal = (function (_super) {
         }
     };
     Terminal.prototype.scroll = function (isWrapped) {
-        var newLine = BufferLine_1.BufferLine.blankLine(this.cols, Buffer_1.DEFAULT_ATTR, isWrapped);
+        if (isWrapped === void 0) { isWrapped = false; }
+        var newLine;
+        newLine = this._blankLine;
+        if (!newLine || newLine.length !== this.cols || newLine.get(0)[Buffer_1.CHAR_DATA_ATTR_INDEX] !== this.eraseAttr()) {
+            newLine = this.buffer.getBlankLine(this.eraseAttr(), isWrapped);
+            this._blankLine = newLine;
+        }
+        newLine.isWrapped = isWrapped;
         var topRow = this.buffer.ybase + this.buffer.scrollTop;
         var bottomRow = this.buffer.ybase + this.buffer.scrollBottom;
         if (this.buffer.scrollTop === 0) {
-            var willBufferBeTrimmed = this.buffer.lines.length === this.buffer.lines.maxLength;
+            var willBufferBeTrimmed = this.buffer.lines.isFull;
             if (bottomRow === this.buffer.lines.length - 1) {
-                this.buffer.lines.push(newLine);
+                if (willBufferBeTrimmed) {
+                    this.buffer.lines.recycle().copyFrom(newLine);
+                }
+                else {
+                    this.buffer.lines.push(newLine.clone());
+                }
             }
             else {
-                this.buffer.lines.splice(bottomRow + 1, 0, newLine);
+                this.buffer.lines.splice(bottomRow + 1, 0, newLine.clone());
             }
             if (!willBufferBeTrimmed) {
                 this.buffer.ybase++;
@@ -4266,7 +4870,7 @@ var Terminal = (function (_super) {
         else {
             var scrollRegionHeight = bottomRow - topRow + 1;
             this.buffer.lines.shiftElements(topRow + 1, scrollRegionHeight - 1, -1);
-            this.buffer.lines.set(bottomRow, newLine);
+            this.buffer.lines.set(bottomRow, newLine.clone());
         }
         if (!this._userScrolling) {
             this.buffer.ydisp = this.buffer.ybase;
@@ -4330,15 +4934,17 @@ var Terminal = (function (_super) {
             });
         }
     };
-    Terminal.prototype._innerWrite = function () {
+    Terminal.prototype._innerWrite = function (bufferOffset) {
         var _this = this;
+        if (bufferOffset === void 0) { bufferOffset = 0; }
         if (this._isDisposed) {
             this.writeBuffer = [];
         }
-        var writeBatch = this.writeBuffer.splice(0, WRITE_BATCH_SIZE);
-        while (writeBatch.length > 0) {
-            var data = writeBatch.shift();
-            if (this._xoffSentToCatchUp && writeBatch.length === 0 && this.writeBuffer.length === 0) {
+        var startTime = Date.now();
+        while (this.writeBuffer.length > bufferOffset) {
+            var data = this.writeBuffer[bufferOffset];
+            bufferOffset++;
+            if (this._xoffSentToCatchUp && this.writeBuffer.length === bufferOffset) {
                 this.handler(EscapeSequences_1.C0.DC1);
                 this._xoffSentToCatchUp = false;
             }
@@ -4347,12 +4953,16 @@ var Terminal = (function (_super) {
             this._inputHandler.parse(data);
             this.updateRange(this.buffer.y);
             this.refresh(this._refreshStart, this._refreshEnd);
+            if (Date.now() - startTime >= WRITE_TIMEOUT_MS) {
+                break;
+            }
         }
-        if (this.writeBuffer.length > 0) {
-            setTimeout(function () { return _this._innerWrite(); }, 0);
+        if (this.writeBuffer.length > bufferOffset) {
+            setTimeout(function () { return _this._innerWrite(bufferOffset); }, 0);
         }
         else {
             this._writeInProgress = false;
+            this.writeBuffer = [];
         }
     };
     Terminal.prototype.writeln = function (data) {
@@ -4360,6 +4970,12 @@ var Terminal = (function (_super) {
     };
     Terminal.prototype.attachCustomKeyEventHandler = function (customKeyEventHandler) {
         this._customKeyEventHandler = customKeyEventHandler;
+    };
+    Terminal.prototype.addCsiHandler = function (flag, callback) {
+        return this._inputHandler.addCsiHandler(flag, callback);
+    };
+    Terminal.prototype.addOscHandler = function (ident, callback) {
+        return this._inputHandler.addOscHandler(ident, callback);
     };
     Terminal.prototype.registerLinkMatcher = function (regex, handler, options) {
         var matcherId = this.linkifier.registerLinkMatcher(regex, handler, options);
@@ -4413,6 +5029,12 @@ var Terminal = (function (_super) {
     Terminal.prototype.selectLines = function (start, end) {
         if (this.selectionManager) {
             this.selectionManager.selectLines(start, end);
+        }
+    };
+    Terminal.prototype._onInput = function (event) {
+        if (event.inputType === 'insertText' && CharWidth_1.isEmoji(event.data)) {
+            this.showCursor();
+            this.handler(event.data);
         }
     };
     Terminal.prototype._keyDown = function (event) {
@@ -4537,10 +5159,10 @@ var Terminal = (function (_super) {
             }
             return;
         }
-        if (x < 1)
-            x = 1;
-        if (y < 1)
-            y = 1;
+        if (x < MINIMUM_COLS)
+            x = MINIMUM_COLS;
+        if (y < MINIMUM_ROWS)
+            y = MINIMUM_ROWS;
         this.buffers.resize(x, y);
         this.cols = x;
         this.rows = y;
@@ -4571,7 +5193,7 @@ var Terminal = (function (_super) {
         this.buffer.ybase = 0;
         this.buffer.y = 0;
         for (var i = 1; i < this.rows; i++) {
-            this.buffer.lines.push(BufferLine_1.BufferLine.blankLine(this.cols, Buffer_1.DEFAULT_ATTR));
+            this.buffer.lines.push(this.buffer.getBlankLine(Buffer_1.DEFAULT_ATTR));
         }
         this.refresh(0, this.rows - 1);
         this.emit('scroll', this.buffer.ydisp);
@@ -4614,7 +5236,7 @@ var Terminal = (function (_super) {
         if (this.buffer.y === this.buffer.scrollTop) {
             var scrollRegionHeight = this.buffer.scrollBottom - this.buffer.scrollTop;
             this.buffer.lines.shiftElements(this.buffer.y + this.buffer.ybase, scrollRegionHeight, 1);
-            this.buffer.lines.set(this.buffer.y + this.buffer.ybase, BufferLine_1.BufferLine.blankLine(this.cols, this.eraseAttr()));
+            this.buffer.lines.set(this.buffer.y + this.buffer.ybase, this.buffer.getBlankLine(this.eraseAttr()));
             this.updateRange(this.buffer.scrollTop);
             this.updateRange(this.buffer.scrollBottom);
         }
@@ -4699,7 +5321,7 @@ function matchColorDistance(r1, g1, b1, r2, g2, b2) {
         + Math.pow(11 * (b1 - b2), 2);
 }
 
-},{"./AccessibilityManager":1,"./Buffer":2,"./BufferLine":3,"./BufferSet":4,"./CompositionHelper":6,"./InputHandler":8,"./Linkifier":9,"./SelectionManager":10,"./SoundManager":12,"./Strings":13,"./Viewport":15,"./common/EventEmitter":17,"./common/data/EscapeSequences":19,"./core/input/Keyboard":21,"./handlers/Clipboard":23,"./renderer/ColorManager":27,"./renderer/Renderer":31,"./renderer/atlas/CharAtlasCache":35,"./renderer/dom/DomRenderer":42,"./shared/utils/Browser":46,"./ui/CharMeasure":47,"./ui/Lifecycle":48,"./ui/MouseZoneManager":49,"./ui/ScreenDprMonitor":51,"./utils/Clone":52,"./utils/MouseHelper":53}],15:[function(require,module,exports){
+},{"./AccessibilityManager":1,"./Buffer":2,"./BufferSet":5,"./CharWidth":6,"./CompositionHelper":7,"./InputHandler":9,"./Linkifier":10,"./SelectionManager":11,"./SoundManager":13,"./Strings":14,"./Viewport":16,"./common/Clone":18,"./common/EventEmitter":19,"./common/data/EscapeSequences":22,"./core/Platform":23,"./core/input/Keyboard":25,"./renderer/ColorManager":31,"./renderer/Renderer":35,"./renderer/atlas/CharAtlasCache":39,"./renderer/dom/DomRenderer":47,"./renderer/webgl/WebglRenderer":53,"./ui/CharMeasure":55,"./ui/Clipboard":56,"./ui/Lifecycle":57,"./ui/MouseHelper":58,"./ui/MouseZoneManager":59,"./ui/ScreenDprMonitor":61}],16:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -4856,7 +5478,7 @@ var Viewport = (function (_super) {
 }(Lifecycle_1.Disposable));
 exports.Viewport = Viewport;
 
-},{"./common/Lifecycle":18,"./ui/Lifecycle":48}],16:[function(require,module,exports){
+},{"./common/Lifecycle":20,"./ui/Lifecycle":57}],17:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -4926,16 +5548,28 @@ var CircularList = (function (_super) {
     CircularList.prototype.push = function (value) {
         this._array[this._getCyclicIndex(this._length)] = value;
         if (this._length === this._maxLength) {
-            this._startIndex++;
-            if (this._startIndex === this._maxLength) {
-                this._startIndex = 0;
-            }
-            this.emit('trim', 1);
+            this._startIndex = ++this._startIndex % this._maxLength;
+            this.emitMayRemoveListeners('trim', 1);
         }
         else {
             this._length++;
         }
     };
+    CircularList.prototype.recycle = function () {
+        if (this._length !== this._maxLength) {
+            throw new Error('Can only recycle when the buffer is full');
+        }
+        this._startIndex = ++this._startIndex % this._maxLength;
+        this.emitMayRemoveListeners('trim', 1);
+        return this._array[this._getCyclicIndex(this._length - 1)];
+    };
+    Object.defineProperty(CircularList.prototype, "isFull", {
+        get: function () {
+            return this._length === this._maxLength;
+        },
+        enumerable: true,
+        configurable: true
+    });
     CircularList.prototype.pop = function () {
         return this._array[this._getCyclicIndex(this._length-- - 1)];
     };
@@ -4950,22 +5584,20 @@ var CircularList = (function (_super) {
             }
             this._length -= deleteCount;
         }
-        if (items && items.length) {
-            for (var i = this._length - 1; i >= start; i--) {
-                this._array[this._getCyclicIndex(i + items.length)] = this._array[this._getCyclicIndex(i)];
-            }
-            for (var i = 0; i < items.length; i++) {
-                this._array[this._getCyclicIndex(start + i)] = items[i];
-            }
-            if (this._length + items.length > this.maxLength) {
-                var countToTrim = (this._length + items.length) - this.maxLength;
-                this._startIndex += countToTrim;
-                this._length = this.maxLength;
-                this.emit('trim', countToTrim);
-            }
-            else {
-                this._length += items.length;
-            }
+        for (var i = this._length - 1; i >= start; i--) {
+            this._array[this._getCyclicIndex(i + items.length)] = this._array[this._getCyclicIndex(i)];
+        }
+        for (var i = 0; i < items.length; i++) {
+            this._array[this._getCyclicIndex(start + i)] = items[i];
+        }
+        if (this._length + items.length > this._maxLength) {
+            var countToTrim = (this._length + items.length) - this._maxLength;
+            this._startIndex += countToTrim;
+            this._length = this._maxLength;
+            this.emitMayRemoveListeners('trim', countToTrim);
+        }
+        else {
+            this._length += items.length;
         }
     };
     CircularList.prototype.trimStart = function (count) {
@@ -4974,7 +5606,7 @@ var CircularList = (function (_super) {
         }
         this._startIndex += count;
         this._length -= count;
-        this.emit('trim', count);
+        this.emitMayRemoveListeners('trim', count);
     };
     CircularList.prototype.shiftElements = function (start, count, offset) {
         if (count <= 0) {
@@ -4993,10 +5625,10 @@ var CircularList = (function (_super) {
             var expandListBy = (start + count + offset) - this._length;
             if (expandListBy > 0) {
                 this._length += expandListBy;
-                while (this._length > this.maxLength) {
+                while (this._length > this._maxLength) {
                     this._length--;
                     this._startIndex++;
-                    this.emit('trim', 1);
+                    this.emitMayRemoveListeners('trim', 1);
                 }
             }
         }
@@ -5007,13 +5639,32 @@ var CircularList = (function (_super) {
         }
     };
     CircularList.prototype._getCyclicIndex = function (index) {
-        return (this._startIndex + index) % this.maxLength;
+        return (this._startIndex + index) % this._maxLength;
     };
     return CircularList;
 }(EventEmitter_1.EventEmitter));
 exports.CircularList = CircularList;
 
-},{"./EventEmitter":17}],17:[function(require,module,exports){
+},{"./EventEmitter":19}],18:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+function clone(val, depth) {
+    if (depth === void 0) { depth = 5; }
+    if (typeof val !== 'object') {
+        return val;
+    }
+    if (val === null) {
+        return null;
+    }
+    var clonedObject = Array.isArray(val) ? [] : {};
+    for (var key in val) {
+        clonedObject[key] = depth <= 1 ? val[key] : clone(val[key], depth - 1);
+    }
+    return clonedObject;
+}
+exports.clone = clone;
+
+},{}],19:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -5086,6 +5737,22 @@ var EventEmitter = (function (_super) {
             obj[i].apply(this, args);
         }
     };
+    EventEmitter.prototype.emitMayRemoveListeners = function (type) {
+        var args = [];
+        for (var _i = 1; _i < arguments.length; _i++) {
+            args[_i - 1] = arguments[_i];
+        }
+        if (!this._events[type]) {
+            return;
+        }
+        var obj = this._events[type];
+        var length = obj.length;
+        for (var i = 0; i < obj.length; i++) {
+            obj[i].apply(this, args);
+            i -= length - obj.length;
+            length = obj.length;
+        }
+    };
     EventEmitter.prototype.listeners = function (type) {
         return this._events[type] || [];
     };
@@ -5097,7 +5764,7 @@ var EventEmitter = (function (_super) {
 }(Lifecycle_1.Disposable));
 exports.EventEmitter = EventEmitter;
 
-},{"./Lifecycle":18}],18:[function(require,module,exports){
+},{"./Lifecycle":20}],20:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Disposable = (function () {
@@ -5123,7 +5790,71 @@ var Disposable = (function () {
 }());
 exports.Disposable = Disposable;
 
-},{}],19:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+function fill(array, value, start, end) {
+    if (array.fill) {
+        return array.fill(value, start, end);
+    }
+    return fillFallback(array, value, start, end);
+}
+exports.fill = fill;
+function fillFallback(array, value, start, end) {
+    if (start === void 0) { start = 0; }
+    if (end === void 0) { end = array.length; }
+    if (start >= array.length) {
+        return array;
+    }
+    start = (array.length + start) % array.length;
+    if (end >= array.length) {
+        end = array.length;
+    }
+    else {
+        end = (array.length + end) % array.length;
+    }
+    for (var i = start; i < end; ++i) {
+        array[i] = value;
+    }
+    return array;
+}
+exports.fillFallback = fillFallback;
+function slice(array, start, end) {
+    if (array.slice) {
+        return array.slice(start, end);
+    }
+    return sliceFallback(array, start, end);
+}
+exports.slice = slice;
+function sliceFallback(array, start, end) {
+    if (start === void 0) { start = 0; }
+    if (end === void 0) { end = array.length; }
+    if (start < 0) {
+        start = (array.length + start) % array.length;
+    }
+    if (end >= array.length) {
+        end = array.length;
+    }
+    else {
+        end = (array.length + end) % array.length;
+    }
+    start = Math.min(start, end);
+    var result = new array.constructor(end - start);
+    for (var i = 0; i < end - start; ++i) {
+        result[i] = array[i + start];
+    }
+    return result;
+}
+exports.sliceFallback = sliceFallback;
+function concat(a, b) {
+    var result = new a.constructor(a.length + b.length);
+    result.set(a);
+    result.set(b, a.length);
+    return result;
+}
+exports.concat = concat;
+
+},{}],22:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var C0;
@@ -5199,7 +5930,25 @@ var C1;
     C1.APC = '\x9f';
 })(C1 = exports.C1 || (exports.C1 = {}));
 
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var isNode = (typeof navigator === 'undefined') ? true : false;
+var userAgent = (isNode) ? 'node' : navigator.userAgent;
+var platform = (isNode) ? 'node' : navigator.platform;
+exports.isFirefox = !!~userAgent.indexOf('Firefox');
+exports.isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
+exports.isMSIE = !!~userAgent.indexOf('MSIE') || !!~userAgent.indexOf('Trident');
+exports.isMac = contains(['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'], platform);
+exports.isIpad = platform === 'iPad';
+exports.isIphone = platform === 'iPhone';
+exports.isMSWindows = contains(['Windows', 'Win16', 'Win32', 'WinCE'], platform);
+exports.isLinux = platform.indexOf('Linux') >= 0;
+function contains(arr, el) {
+    return arr.indexOf(el) >= 0;
+}
+
+},{}],24:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CHARSETS = {};
@@ -5360,7 +6109,7 @@ exports.CHARSETS['='] = {
     '~': 'û'
 };
 
-},{}],21:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var EscapeSequences_1 = require("../../common/data/EscapeSequences");
@@ -5699,13 +6448,94 @@ function evaluateKeyboardEvent(ev, applicationCursorMode, isMac, macOptionIsMeta
                     result.type = 1;
                 }
             }
+            else if (ev.key && !ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.keyCode >= 48 && ev.key.length === 1) {
+                result.key = ev.key;
+            }
             break;
     }
     return result;
 }
 exports.evaluateKeyboardEvent = evaluateKeyboardEvent;
 
-},{"../../common/data/EscapeSequences":19}],22:[function(require,module,exports){
+},{"../../common/data/EscapeSequences":22}],26:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var StringToUtf32 = (function () {
+    function StringToUtf32() {
+        this._interim = 0;
+    }
+    StringToUtf32.prototype.clear = function () {
+        this._interim = 0;
+    };
+    StringToUtf32.prototype.decode = function (input, target) {
+        var length = input.length;
+        if (!length) {
+            return 0;
+        }
+        var size = 0;
+        var startPos = 0;
+        if (this._interim) {
+            var second = input.charCodeAt(startPos++);
+            if (0xDC00 <= second && second <= 0xDFFF) {
+                target[size++] = (this._interim - 0xD800) * 0x400 + second - 0xDC00 + 0x10000;
+            }
+            else {
+                target[size++] = this._interim;
+                target[size++] = second;
+            }
+            this._interim = 0;
+        }
+        for (var i = startPos; i < length; ++i) {
+            var code = input.charCodeAt(i);
+            if (0xD800 <= code && code <= 0xDBFF) {
+                if (++i >= length) {
+                    this._interim = code;
+                    return size;
+                }
+                var second = input.charCodeAt(i);
+                if (0xDC00 <= second && second <= 0xDFFF) {
+                    target[size++] = (code - 0xD800) * 0x400 + second - 0xDC00 + 0x10000;
+                }
+                else {
+                    target[size++] = code;
+                    target[size++] = second;
+                }
+                continue;
+            }
+            target[size++] = code;
+        }
+        return size;
+    };
+    return StringToUtf32;
+}());
+exports.StringToUtf32 = StringToUtf32;
+function stringFromCodePoint(codePoint) {
+    if (codePoint > 0xFFFF) {
+        codePoint -= 0x10000;
+        return String.fromCharCode((codePoint >> 10) + 0xD800) + String.fromCharCode((codePoint % 0x400) + 0xDC00);
+    }
+    return String.fromCharCode(codePoint);
+}
+exports.stringFromCodePoint = stringFromCodePoint;
+function utf32ToString(data, start, end) {
+    if (start === void 0) { start = 0; }
+    if (end === void 0) { end = data.length; }
+    var result = '';
+    for (var i = start; i < end; ++i) {
+        var codepoint = data[i];
+        if (codepoint > 0xFFFF) {
+            codepoint -= 0x10000;
+            result += String.fromCharCode((codepoint >> 10) + 0xD800) + String.fromCharCode((codepoint % 0x400) + 0xDC00);
+        }
+        else {
+            result += String.fromCharCode(codepoint);
+        }
+    }
+    return result;
+}
+exports.utf32ToString = utf32ToString;
+
+},{}],27:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var EscapeSequences_1 = require("../common/data/EscapeSequences");
@@ -5717,7 +6547,7 @@ var AltClickHandler = (function () {
         this._lines = this._terminal.buffer.lines;
         this._startCol = this._terminal.buffer.x;
         this._startRow = this._terminal.buffer.y;
-        var coordinates = this._terminal.mouseHelper.getCoords(this._mouseEvent, this._terminal.element, this._terminal.charMeasure, this._terminal.options.lineHeight, this._terminal.cols, this._terminal.rows, false);
+        var coordinates = this._terminal.mouseHelper.getCoords(this._mouseEvent, this._terminal.element, this._terminal.charMeasure, this._terminal.cols, this._terminal.rows, false);
         if (coordinates) {
             _a = coordinates.map(function (coordinate) {
                 return coordinate - 1;
@@ -5844,84 +6674,7 @@ function repeat(count, str) {
     return rpt;
 }
 
-},{"../common/data/EscapeSequences":19}],23:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-function prepareTextForTerminal(text) {
-    return text.replace(/\r?\n/g, '\r');
-}
-exports.prepareTextForTerminal = prepareTextForTerminal;
-function bracketTextForPaste(text, bracketedPasteMode) {
-    if (bracketedPasteMode) {
-        return '\x1b[200~' + text + '\x1b[201~';
-    }
-    return text;
-}
-exports.bracketTextForPaste = bracketTextForPaste;
-function copyHandler(ev, term, selectionManager) {
-    if (term.browser.isMSIE) {
-        window.clipboardData.setData('Text', selectionManager.selectionText);
-    }
-    else {
-        ev.clipboardData.setData('text/plain', selectionManager.selectionText);
-    }
-    ev.preventDefault();
-}
-exports.copyHandler = copyHandler;
-function pasteHandler(ev, term) {
-    ev.stopPropagation();
-    var text;
-    var dispatchPaste = function (text) {
-        text = prepareTextForTerminal(text);
-        text = bracketTextForPaste(text, term.bracketedPasteMode);
-        term.handler(text);
-        term.textarea.value = '';
-        term.emit('paste', text);
-        term.cancel(ev);
-    };
-    if (term.browser.isMSIE) {
-        if (window.clipboardData) {
-            text = window.clipboardData.getData('Text');
-            dispatchPaste(text);
-        }
-    }
-    else {
-        if (ev.clipboardData) {
-            text = ev.clipboardData.getData('text/plain');
-            dispatchPaste(text);
-        }
-    }
-}
-exports.pasteHandler = pasteHandler;
-function moveTextAreaUnderMouseCursor(ev, textarea) {
-    textarea.style.position = 'fixed';
-    textarea.style.width = '20px';
-    textarea.style.height = '20px';
-    textarea.style.left = (ev.clientX - 10) + 'px';
-    textarea.style.top = (ev.clientY - 10) + 'px';
-    textarea.style.zIndex = '1000';
-    textarea.focus();
-    setTimeout(function () {
-        textarea.style.position = null;
-        textarea.style.width = null;
-        textarea.style.height = null;
-        textarea.style.left = null;
-        textarea.style.top = null;
-        textarea.style.zIndex = null;
-    }, 200);
-}
-exports.moveTextAreaUnderMouseCursor = moveTextAreaUnderMouseCursor;
-function rightClickHandler(ev, textarea, selectionManager, shouldSelectWord) {
-    moveTextAreaUnderMouseCursor(ev, textarea);
-    if (shouldSelectWord && !selectionManager.isClickInSelection(ev)) {
-        selectionManager.selectWordAtCursor(ev);
-    }
-    textarea.value = selectionManager.selectionText;
-    textarea.select();
-}
-exports.rightClickHandler = rightClickHandler;
-
-},{}],24:[function(require,module,exports){
+},{"../common/data/EscapeSequences":22}],28:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Terminal_1 = require("../Terminal");
@@ -5984,6 +6737,12 @@ var Terminal = (function () {
     };
     Terminal.prototype.attachCustomKeyEventHandler = function (customKeyEventHandler) {
         this._core.attachCustomKeyEventHandler(customKeyEventHandler);
+    };
+    Terminal.prototype.addCsiHandler = function (flag, callback) {
+        return this._core.addCsiHandler(flag, callback);
+    };
+    Terminal.prototype.addOscHandler = function (ident, callback) {
+        return this._core.addOscHandler(ident, callback);
     };
     Terminal.prototype.registerLinkMatcher = function (regex, handler, options) {
         return this._core.registerLinkMatcher(regex, handler, options);
@@ -6068,12 +6827,13 @@ var Terminal = (function () {
 }());
 exports.Terminal = Terminal;
 
-},{"../Strings":13,"../Terminal":14}],25:[function(require,module,exports){
+},{"../Strings":14,"../Terminal":15}],29:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Types_1 = require("./atlas/Types");
 var CharAtlasCache_1 = require("./atlas/CharAtlasCache");
 var Buffer_1 = require("../Buffer");
+var CharAtlasUtils_1 = require("./atlas/CharAtlasUtils");
 var BaseRenderLayer = (function () {
     function BaseRenderLayer(_container, id, zIndex, _alpha, _colors) {
         this._container = _container;
@@ -6192,9 +6952,9 @@ var BaseRenderLayer = (function () {
     };
     BaseRenderLayer.prototype.fillCharTrueColor = function (terminal, charData, x, y) {
         this._ctx.font = this._getFont(terminal, false, false);
-        this._ctx.textBaseline = 'top';
+        this._ctx.textBaseline = 'middle';
         this._clipRow(terminal, y);
-        this._ctx.fillText(charData[Buffer_1.CHAR_DATA_CHAR_INDEX], x * this._scaledCellWidth + this._scaledCharLeft, y * this._scaledCellHeight + this._scaledCharTop);
+        this._ctx.fillText(charData[Buffer_1.CHAR_DATA_CHAR_INDEX], x * this._scaledCellWidth + this._scaledCharLeft, y * this._scaledCellHeight + this._scaledCharTop + this._scaledCharHeight / 2);
     };
     BaseRenderLayer.prototype.drawChars = function (terminal, chars, code, width, x, y, fg, bg, bold, dim, italic) {
         var drawInBrightColor = terminal.options.drawBoldTextInBrightColors && bold && fg < 8 && fg !== Types_1.INVERTED_DEFAULT_COLOR;
@@ -6214,11 +6974,11 @@ var BaseRenderLayer = (function () {
     BaseRenderLayer.prototype._drawUncachedChars = function (terminal, chars, width, fg, x, y, bold, dim, italic) {
         this._ctx.save();
         this._ctx.font = this._getFont(terminal, bold, italic);
-        this._ctx.textBaseline = 'top';
+        this._ctx.textBaseline = 'middle';
         if (fg === Types_1.INVERTED_DEFAULT_COLOR) {
             this._ctx.fillStyle = this._colors.background.css;
         }
-        else if (fg < 256) {
+        else if (CharAtlasUtils_1.is256Color(fg)) {
             this._ctx.fillStyle = this._colors.ansi[fg].css;
         }
         else {
@@ -6228,7 +6988,7 @@ var BaseRenderLayer = (function () {
         if (dim) {
             this._ctx.globalAlpha = Types_1.DIM_OPACITY;
         }
-        this._ctx.fillText(chars, x * this._scaledCellWidth + this._scaledCharLeft, y * this._scaledCellHeight + this._scaledCharTop);
+        this._ctx.fillText(chars, x * this._scaledCellWidth + this._scaledCharLeft, y * this._scaledCellHeight + this._scaledCharTop + this._scaledCharHeight / 2);
         this._ctx.restore();
     };
     BaseRenderLayer.prototype._clipRow = function (terminal, y) {
@@ -6245,7 +7005,7 @@ var BaseRenderLayer = (function () {
 }());
 exports.BaseRenderLayer = BaseRenderLayer;
 
-},{"../Buffer":2,"./atlas/CharAtlasCache":35,"./atlas/Types":41}],26:[function(require,module,exports){
+},{"../Buffer":2,"./atlas/CharAtlasCache":39,"./atlas/CharAtlasUtils":41,"./atlas/Types":46}],30:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Buffer_1 = require("../Buffer");
@@ -6412,7 +7172,7 @@ var CharacterJoinerRegistry = (function () {
 }());
 exports.CharacterJoinerRegistry = CharacterJoinerRegistry;
 
-},{"../Buffer":2}],27:[function(require,module,exports){
+},{"../Buffer":2}],31:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var DEFAULT_FOREGROUND = fromHex('#ffffff');
@@ -6490,6 +7250,12 @@ var ColorManager = (function () {
             ansi: exports.DEFAULT_ANSI_COLORS.slice()
         };
     }
+    ColorManager.prototype.getLuminance = function (color) {
+        var r = color.rgba >> 24 & 0xff;
+        var g = color.rgba >> 16 & 0xff;
+        var b = color.rgba >> 8 & 0xff;
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    };
     ColorManager.prototype.setTheme = function (theme) {
         this.colors.foreground = this._parseColor(theme.foreground, DEFAULT_FOREGROUND);
         this.colors.background = this._parseColor(theme.background, DEFAULT_BACKGROUND);
@@ -6512,6 +7278,14 @@ var ColorManager = (function () {
         this.colors.ansi[13] = this._parseColor(theme.brightMagenta, exports.DEFAULT_ANSI_COLORS[13]);
         this.colors.ansi[14] = this._parseColor(theme.brightCyan, exports.DEFAULT_ANSI_COLORS[14]);
         this.colors.ansi[15] = this._parseColor(theme.brightWhite, exports.DEFAULT_ANSI_COLORS[15]);
+    };
+    ColorManager.prototype.applyWebglSelectionColorHack = function () {
+        if (this.getLuminance(this.colors.background) > 0.5) {
+            this.colors.selection = this._parseColor('#000', DEFAULT_SELECTION, true);
+        }
+        else {
+            this.colors.selection = this._parseColor('#fff', DEFAULT_SELECTION, true);
+        }
     };
     ColorManager.prototype._parseColor = function (css, fallback, allowTransparency) {
         if (allowTransparency === void 0) { allowTransparency = this.allowTransparency; }
@@ -6540,7 +7314,7 @@ var ColorManager = (function () {
 }());
 exports.ColorManager = ColorManager;
 
-},{}],28:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -6830,7 +7604,7 @@ var CursorBlinkStateManager = (function () {
     return CursorBlinkStateManager;
 }());
 
-},{"../Buffer":2,"./BaseRenderLayer":25}],29:[function(require,module,exports){
+},{"../Buffer":2,"./BaseRenderLayer":29}],33:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var GridCache = (function () {
@@ -6860,7 +7634,7 @@ var GridCache = (function () {
 }());
 exports.GridCache = GridCache;
 
-},{}],30:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -6878,6 +7652,7 @@ var __extends = (this && this.__extends) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 var BaseRenderLayer_1 = require("./BaseRenderLayer");
 var Types_1 = require("./atlas/Types");
+var CharAtlasUtils_1 = require("./atlas/CharAtlasUtils");
 var LinkRenderLayer = (function (_super) {
     __extends(LinkRenderLayer, _super);
     function LinkRenderLayer(container, zIndex, colors, terminal) {
@@ -6909,7 +7684,7 @@ var LinkRenderLayer = (function (_super) {
         if (e.fg === Types_1.INVERTED_DEFAULT_COLOR) {
             this._ctx.fillStyle = this._colors.background.css;
         }
-        else if (e.fg < 256) {
+        else if (CharAtlasUtils_1.is256Color(e.fg)) {
             this._ctx.fillStyle = this._colors.ansi[e.fg].css;
         }
         else {
@@ -6934,7 +7709,7 @@ var LinkRenderLayer = (function (_super) {
 }(BaseRenderLayer_1.BaseRenderLayer));
 exports.LinkRenderLayer = LinkRenderLayer;
 
-},{"./BaseRenderLayer":25,"./atlas/Types":41}],31:[function(require,module,exports){
+},{"./BaseRenderLayer":29,"./atlas/CharAtlasUtils":41,"./atlas/Types":46}],35:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7000,7 +7775,7 @@ var Renderer = (function (_super) {
         _this._screenDprMonitor.setListener(function () { return _this.onWindowResize(window.devicePixelRatio); });
         _this.register(_this._screenDprMonitor);
         if ('IntersectionObserver' in window) {
-            var observer_1 = new IntersectionObserver(function (e) { return _this.onIntersectionChange(e[0]); }, { threshold: 0 });
+            var observer_1 = new IntersectionObserver(function (e) { return _this.onIntersectionChange(e[e.length - 1]); }, { threshold: 0 });
             observer_1.observe(_this._terminal.element);
             _this.register({ dispose: function () { return observer_1.disconnect(); } });
         }
@@ -7130,7 +7905,7 @@ var Renderer = (function (_super) {
 }(EventEmitter_1.EventEmitter));
 exports.Renderer = Renderer;
 
-},{"../common/EventEmitter":17,"../renderer/CharacterJoinerRegistry":26,"../ui/RenderDebouncer":50,"../ui/ScreenDprMonitor":51,"./ColorManager":27,"./CursorRenderLayer":28,"./LinkRenderLayer":30,"./SelectionRenderLayer":32,"./TextRenderLayer":33}],32:[function(require,module,exports){
+},{"../common/EventEmitter":19,"../renderer/CharacterJoinerRegistry":30,"../ui/RenderDebouncer":60,"../ui/ScreenDprMonitor":61,"./ColorManager":31,"./CursorRenderLayer":32,"./LinkRenderLayer":34,"./SelectionRenderLayer":36,"./TextRenderLayer":37}],36:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7178,6 +7953,7 @@ var SelectionRenderLayer = (function (_super) {
         }
         this.clearAll();
         if (!start || !end) {
+            this._clearState();
             return;
         }
         var viewportStartRow = start[1] - terminal.buffer.ydisp;
@@ -7226,7 +8002,7 @@ var SelectionRenderLayer = (function (_super) {
 }(BaseRenderLayer_1.BaseRenderLayer));
 exports.SelectionRenderLayer = SelectionRenderLayer;
 
-},{"./BaseRenderLayer":25}],33:[function(require,module,exports){
+},{"./BaseRenderLayer":29}],37:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7246,6 +8022,7 @@ var Buffer_1 = require("../Buffer");
 var Types_1 = require("./atlas/Types");
 var GridCache_1 = require("./GridCache");
 var BaseRenderLayer_1 = require("./BaseRenderLayer");
+var CharAtlasUtils_1 = require("./atlas/CharAtlasUtils");
 var TextRenderLayer = (function (_super) {
     __extends(TextRenderLayer, _super);
     function TextRenderLayer(container, zIndex, colors, characterJoinerRegistry, alpha) {
@@ -7277,8 +8054,8 @@ var TextRenderLayer = (function (_super) {
             var joinedRanges = joinerRegistry ? joinerRegistry.getJoinedCharacters(row) : [];
             for (var x = 0; x < terminal.cols; x++) {
                 var charData = line.get(x);
-                var code = charData[Buffer_1.CHAR_DATA_CODE_INDEX];
-                var chars = charData[Buffer_1.CHAR_DATA_CHAR_INDEX];
+                var code = charData[Buffer_1.CHAR_DATA_CODE_INDEX] || Buffer_1.WHITESPACE_CELL_CODE;
+                var chars = charData[Buffer_1.CHAR_DATA_CHAR_INDEX] || Buffer_1.WHITESPACE_CELL_CHAR;
                 var attr = charData[Buffer_1.CHAR_DATA_ATTR_INDEX];
                 var width = charData[Buffer_1.CHAR_DATA_WIDTH_INDEX];
                 var isJoined = false;
@@ -7306,10 +8083,10 @@ var TextRenderLayer = (function (_super) {
                     var temp = bg;
                     bg = fg;
                     fg = temp;
-                    if (fg === 256) {
+                    if (fg === Types_1.DEFAULT_COLOR) {
                         fg = Types_1.INVERTED_DEFAULT_COLOR;
                     }
-                    if (bg === 257) {
+                    if (bg === Types_1.DEFAULT_COLOR) {
                         bg = Types_1.INVERTED_DEFAULT_COLOR;
                     }
                 }
@@ -7331,7 +8108,7 @@ var TextRenderLayer = (function (_super) {
             if (bg === Types_1.INVERTED_DEFAULT_COLOR) {
                 nextFillStyle = _this._colors.foreground.css;
             }
-            else if (bg < 256) {
+            else if (CharAtlasUtils_1.is256Color(bg)) {
                 nextFillStyle = _this._colors.ansi[bg].css;
             }
             if (prevFillStyle === null) {
@@ -7369,7 +8146,7 @@ var TextRenderLayer = (function (_super) {
                 if (fg === Types_1.INVERTED_DEFAULT_COLOR) {
                     _this._ctx.fillStyle = _this._colors.background.css;
                 }
-                else if (fg < 256) {
+                else if (CharAtlasUtils_1.is256Color(fg)) {
                     _this._ctx.fillStyle = _this._colors.ansi[fg].css;
                 }
                 else {
@@ -7418,7 +8195,7 @@ var TextRenderLayer = (function (_super) {
 }(BaseRenderLayer_1.BaseRenderLayer));
 exports.TextRenderLayer = TextRenderLayer;
 
-},{"../Buffer":2,"./BaseRenderLayer":25,"./GridCache":29,"./atlas/Types":41}],34:[function(require,module,exports){
+},{"../Buffer":2,"./BaseRenderLayer":29,"./GridCache":33,"./atlas/CharAtlasUtils":41,"./atlas/Types":46}],38:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var BaseCharAtlas = (function () {
@@ -7438,21 +8215,23 @@ var BaseCharAtlas = (function () {
 }());
 exports.default = BaseCharAtlas;
 
-},{}],35:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var CharAtlasUtils_1 = require("./CharAtlasUtils");
 var DynamicCharAtlas_1 = require("./DynamicCharAtlas");
 var NoneCharAtlas_1 = require("./NoneCharAtlas");
 var StaticCharAtlas_1 = require("./StaticCharAtlas");
+var WebglCharAtlas_1 = require("../webgl/WebglCharAtlas");
 var charAtlasImplementations = {
     'none': NoneCharAtlas_1.default,
     'static': StaticCharAtlas_1.default,
-    'dynamic': DynamicCharAtlas_1.default
+    'dynamic': DynamicCharAtlas_1.default,
+    'webgl': WebglCharAtlas_1.default
 };
 var charAtlasCache = [];
-function acquireCharAtlas(terminal, colors, scaledCharWidth, scaledCharHeight) {
-    var newConfig = CharAtlasUtils_1.generateConfig(scaledCharWidth, scaledCharHeight, terminal, colors);
+function acquireCharAtlas(terminal, colors, scaledCharWidth, scaledCharHeight, devicePixelRatio) {
+    var newConfig = CharAtlasUtils_1.generateConfig(scaledCharWidth, scaledCharHeight, terminal, colors, devicePixelRatio);
     for (var i = 0; i < charAtlasCache.length; i++) {
         var entry = charAtlasCache[i];
         var ownedByIndex = entry.ownedBy.indexOf(terminal);
@@ -7461,6 +8240,7 @@ function acquireCharAtlas(terminal, colors, scaledCharWidth, scaledCharHeight) {
                 return entry.atlas;
             }
             if (entry.ownedBy.length === 1) {
+                entry.atlas.dispose();
                 charAtlasCache.splice(i, 1);
             }
             else {
@@ -7490,6 +8270,7 @@ function removeTerminalFromCache(terminal) {
         var index = charAtlasCache[i].ownedBy.indexOf(terminal);
         if (index !== -1) {
             if (charAtlasCache[i].ownedBy.length === 1) {
+                charAtlasCache[i].atlas.dispose();
                 charAtlasCache.splice(i, 1);
             }
             else {
@@ -7501,10 +8282,104 @@ function removeTerminalFromCache(terminal) {
 }
 exports.removeTerminalFromCache = removeTerminalFromCache;
 
-},{"./CharAtlasUtils":36,"./DynamicCharAtlas":37,"./NoneCharAtlas":39,"./StaticCharAtlas":40}],36:[function(require,module,exports){
+},{"../webgl/WebglCharAtlas":52,"./CharAtlasUtils":41,"./DynamicCharAtlas":42,"./NoneCharAtlas":44,"./StaticCharAtlas":45}],40:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-function generateConfig(scaledCharWidth, scaledCharHeight, terminal, colors) {
+var Platform_1 = require("../../core/Platform");
+var Types_1 = require("./Types");
+function generateStaticCharAtlasTexture(context, canvasFactory, config) {
+    var cellWidth = config.scaledCharWidth + Types_1.CHAR_ATLAS_CELL_SPACING;
+    var cellHeight = config.scaledCharHeight + Types_1.CHAR_ATLAS_CELL_SPACING;
+    var canvas = canvasFactory(255 * cellWidth, (2 + 16 + 16) * cellHeight);
+    var ctx = canvas.getContext('2d', { alpha: config.allowTransparency });
+    ctx.fillStyle = config.colors.background.css;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.fillStyle = config.colors.foreground.css;
+    ctx.font = getFont(config.fontWeight, config);
+    ctx.textBaseline = 'middle';
+    for (var i = 0; i < 256; i++) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(i * cellWidth, 0, cellWidth, cellHeight);
+        ctx.clip();
+        ctx.fillText(String.fromCharCode(i), i * cellWidth, cellHeight / 2);
+        ctx.restore();
+    }
+    ctx.save();
+    ctx.font = getFont(config.fontWeightBold, config);
+    for (var i = 0; i < 256; i++) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(i * cellWidth, cellHeight, cellWidth, cellHeight);
+        ctx.clip();
+        ctx.fillText(String.fromCharCode(i), i * cellWidth, cellHeight * 1.5);
+        ctx.restore();
+    }
+    ctx.restore();
+    ctx.font = getFont(config.fontWeight, config);
+    for (var colorIndex = 0; colorIndex < 16; colorIndex++) {
+        var y = (colorIndex + 2) * cellHeight;
+        for (var i = 0; i < 256; i++) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(i * cellWidth, y, cellWidth, cellHeight);
+            ctx.clip();
+            ctx.fillStyle = config.colors.ansi[colorIndex].css;
+            ctx.fillText(String.fromCharCode(i), i * cellWidth, y + cellHeight / 2);
+            ctx.restore();
+        }
+    }
+    ctx.font = getFont(config.fontWeightBold, config);
+    for (var colorIndex = 0; colorIndex < 16; colorIndex++) {
+        var y = (colorIndex + 2 + 16) * cellHeight;
+        for (var i = 0; i < 256; i++) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(i * cellWidth, y, cellWidth, cellHeight);
+            ctx.clip();
+            ctx.fillStyle = config.colors.ansi[colorIndex].css;
+            ctx.fillText(String.fromCharCode(i), i * cellWidth, y + cellHeight / 2);
+            ctx.restore();
+        }
+    }
+    ctx.restore();
+    if (!('createImageBitmap' in context) || Platform_1.isFirefox || Platform_1.isSafari) {
+        return canvas;
+    }
+    var charAtlasImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    clearColor(charAtlasImageData, config.colors.background);
+    return context.createImageBitmap(charAtlasImageData);
+}
+exports.generateStaticCharAtlasTexture = generateStaticCharAtlasTexture;
+function clearColor(imageData, color) {
+    var isEmpty = true;
+    var r = color.rgba >>> 24;
+    var g = color.rgba >>> 16 & 0xFF;
+    var b = color.rgba >>> 8 & 0xFF;
+    for (var offset = 0; offset < imageData.data.length; offset += 4) {
+        if (imageData.data[offset] === r &&
+            imageData.data[offset + 1] === g &&
+            imageData.data[offset + 2] === b) {
+            imageData.data[offset + 3] = 0;
+        }
+        else {
+            isEmpty = false;
+        }
+    }
+    return isEmpty;
+}
+exports.clearColor = clearColor;
+function getFont(fontWeight, config) {
+    return fontWeight + " " + config.fontSize * config.devicePixelRatio + "px " + config.fontFamily;
+}
+
+},{"../../core/Platform":23,"./Types":46}],41:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var Types_1 = require("./Types");
+function generateConfig(scaledCharWidth, scaledCharHeight, terminal, colors, devicePixelRatio) {
+    if (devicePixelRatio === void 0) { devicePixelRatio = window.devicePixelRatio; }
     var clonedColors = {
         foreground: colors.foreground,
         background: colors.background,
@@ -7515,7 +8390,7 @@ function generateConfig(scaledCharWidth, scaledCharHeight, terminal, colors) {
     };
     return {
         type: terminal.options.experimentalCharAtlas,
-        devicePixelRatio: window.devicePixelRatio,
+        devicePixelRatio: devicePixelRatio,
         scaledCharWidth: scaledCharWidth,
         scaledCharHeight: scaledCharHeight,
         fontFamily: terminal.options.fontFamily,
@@ -7546,8 +8421,12 @@ function configEquals(a, b) {
         a.colors.background === b.colors.background;
 }
 exports.configEquals = configEquals;
+function is256Color(colorCode) {
+    return colorCode < Types_1.DEFAULT_COLOR;
+}
+exports.is256Color = is256Color;
 
-},{}],37:[function(require,module,exports){
+},{"./Types":46}],42:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7566,9 +8445,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var Types_1 = require("./Types");
 var BaseCharAtlas_1 = require("./BaseCharAtlas");
 var ColorManager_1 = require("../ColorManager");
-var CharAtlasGenerator_1 = require("../../shared/atlas/CharAtlasGenerator");
+var CharAtlasGenerator_1 = require("./CharAtlasGenerator");
 var LRUMap_1 = require("./LRUMap");
-var Browser_1 = require("../../shared/utils/Browser");
+var Platform_1 = require("../../core/Platform");
 var TEXTURE_WIDTH = 1024;
 var TEXTURE_HEIGHT = 1024;
 var TRANSPARENT_COLOR = {
@@ -7580,6 +8459,7 @@ var GLYPH_BITMAP_COMMIT_DELAY = 100;
 function getGlyphCacheKey(glyph) {
     return glyph.code << 21 | glyph.bg << 12 | glyph.fg << 3 | (glyph.bold ? 0 : 4) + (glyph.dim ? 0 : 2) + (glyph.italic ? 0 : 1);
 }
+exports.getGlyphCacheKey = getGlyphCacheKey;
 var DynamicCharAtlas = (function (_super) {
     __extends(DynamicCharAtlas, _super);
     function DynamicCharAtlas(document, _config) {
@@ -7617,13 +8497,16 @@ var DynamicCharAtlas = (function (_super) {
         if (glyph.code === 32) {
             return true;
         }
+        if (!this._canCache(glyph)) {
+            return false;
+        }
         var glyphKey = getGlyphCacheKey(glyph);
         var cacheValue = this._cacheMap.get(glyphKey);
         if (cacheValue !== null && cacheValue !== undefined) {
             this._drawFromCache(ctx, cacheValue, x, y);
             return true;
         }
-        else if (this._canCache(glyph) && this._drawToCacheCount < FRAME_CACHE_DRAW_LIMIT) {
+        else if (this._drawToCacheCount < FRAME_CACHE_DRAW_LIMIT) {
             var index = void 0;
             if (this._cacheMap.size < this._cacheMap.capacity) {
                 index = this._cacheMap.size;
@@ -7694,12 +8577,12 @@ var DynamicCharAtlas = (function (_super) {
         var fontStyle = glyph.italic ? 'italic' : '';
         this._tmpCtx.font =
             fontStyle + " " + fontWeight + " " + this._config.fontSize * this._config.devicePixelRatio + "px " + this._config.fontFamily;
-        this._tmpCtx.textBaseline = 'top';
+        this._tmpCtx.textBaseline = 'middle';
         this._tmpCtx.fillStyle = this._getForegroundColor(glyph).css;
         if (glyph.dim) {
             this._tmpCtx.globalAlpha = Types_1.DIM_OPACITY;
         }
-        this._tmpCtx.fillText(glyph.chars, 0, 0);
+        this._tmpCtx.fillText(glyph.chars, 0, this._config.scaledCharHeight / 2);
         this._tmpCtx.restore();
         var imageData = this._tmpCtx.getImageData(0, 0, this._config.scaledCharWidth, this._config.scaledCharHeight);
         var isEmpty = false;
@@ -7719,7 +8602,7 @@ var DynamicCharAtlas = (function (_super) {
     };
     DynamicCharAtlas.prototype._addGlyphToBitmap = function (cacheValue) {
         var _this = this;
-        if (!('createImageBitmap' in window) || Browser_1.isFirefox || Browser_1.isSafari) {
+        if (!('createImageBitmap' in window) || Platform_1.isFirefox || Platform_1.isSafari) {
             return;
         }
         this._glyphsWaitingOnBitmap.push(cacheValue);
@@ -7745,7 +8628,7 @@ var DynamicCharAtlas = (function (_super) {
 }(BaseCharAtlas_1.default));
 exports.default = DynamicCharAtlas;
 
-},{"../../shared/atlas/CharAtlasGenerator":44,"../../shared/utils/Browser":46,"../ColorManager":27,"./BaseCharAtlas":34,"./LRUMap":38,"./Types":41}],38:[function(require,module,exports){
+},{"../../core/Platform":23,"../ColorManager":31,"./BaseCharAtlas":38,"./CharAtlasGenerator":40,"./LRUMap":43,"./Types":46}],43:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var LRUMap = (function () {
@@ -7855,7 +8738,7 @@ var LRUMap = (function () {
 }());
 exports.default = LRUMap;
 
-},{}],39:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7884,7 +8767,7 @@ var NoneCharAtlas = (function (_super) {
 }(BaseCharAtlas_1.default));
 exports.default = NoneCharAtlas;
 
-},{"./BaseCharAtlas":34}],40:[function(require,module,exports){
+},{"./BaseCharAtlas":38}],45:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7901,9 +8784,9 @@ var __extends = (this && this.__extends) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 var Types_1 = require("./Types");
-var Types_2 = require("../../shared/atlas/Types");
-var CharAtlasGenerator_1 = require("../../shared/atlas/CharAtlasGenerator");
+var CharAtlasGenerator_1 = require("./CharAtlasGenerator");
 var BaseCharAtlas_1 = require("./BaseCharAtlas");
+var CharAtlasUtils_1 = require("./CharAtlasUtils");
 var StaticCharAtlas = (function (_super) {
     __extends(StaticCharAtlas, _super);
     function StaticCharAtlas(_document, _config) {
@@ -7933,8 +8816,8 @@ var StaticCharAtlas = (function (_super) {
     StaticCharAtlas.prototype._isCached = function (glyph, colorIndex) {
         var isAscii = glyph.code < 256;
         var isBasicColor = glyph.fg < 16;
-        var isDefaultColor = glyph.fg >= 256;
-        var isDefaultBackground = glyph.bg >= 256;
+        var isDefaultColor = glyph.fg === Types_1.DEFAULT_COLOR;
+        var isDefaultBackground = glyph.bg === Types_1.DEFAULT_COLOR;
         return isAscii && (isBasicColor || isDefaultColor) && isDefaultBackground && !glyph.italic;
     };
     StaticCharAtlas.prototype.draw = function (ctx, glyph, x, y) {
@@ -7942,10 +8825,10 @@ var StaticCharAtlas = (function (_super) {
             return false;
         }
         var colorIndex = 0;
-        if (glyph.fg < 256) {
+        if (CharAtlasUtils_1.is256Color(glyph.fg)) {
             colorIndex = 2 + glyph.fg + (glyph.bold ? 16 : 0);
         }
-        else {
+        else if (glyph.fg === Types_1.DEFAULT_COLOR) {
             if (glyph.bold) {
                 colorIndex = 1;
             }
@@ -7954,8 +8837,8 @@ var StaticCharAtlas = (function (_super) {
             return false;
         }
         ctx.save();
-        var charAtlasCellWidth = this._config.scaledCharWidth + Types_2.CHAR_ATLAS_CELL_SPACING;
-        var charAtlasCellHeight = this._config.scaledCharHeight + Types_2.CHAR_ATLAS_CELL_SPACING;
+        var charAtlasCellWidth = this._config.scaledCharWidth + Types_1.CHAR_ATLAS_CELL_SPACING;
+        var charAtlasCellHeight = this._config.scaledCharHeight + Types_1.CHAR_ATLAS_CELL_SPACING;
         if (glyph.dim) {
             ctx.globalAlpha = Types_1.DIM_OPACITY;
         }
@@ -7967,13 +8850,15 @@ var StaticCharAtlas = (function (_super) {
 }(BaseCharAtlas_1.default));
 exports.default = StaticCharAtlas;
 
-},{"../../shared/atlas/CharAtlasGenerator":44,"../../shared/atlas/Types":45,"./BaseCharAtlas":34,"./Types":41}],41:[function(require,module,exports){
+},{"./BaseCharAtlas":38,"./CharAtlasGenerator":40,"./CharAtlasUtils":41,"./Types":46}],46:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.INVERTED_DEFAULT_COLOR = -1;
+exports.DEFAULT_COLOR = 256;
+exports.INVERTED_DEFAULT_COLOR = 257;
 exports.DIM_OPACITY = 0.5;
+exports.CHAR_ATLAS_CELL_SPACING = 1;
 
-},{}],42:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -7993,6 +8878,7 @@ var EventEmitter_1 = require("../../common/EventEmitter");
 var ColorManager_1 = require("../ColorManager");
 var RenderDebouncer_1 = require("../../ui/RenderDebouncer");
 var DomRendererRowFactory_1 = require("./DomRendererRowFactory");
+var Types_1 = require("../atlas/Types");
 var TERMINAL_CLASS_PREFIX = 'xterm-dom-renderer-owner-';
 var ROW_CONTAINER_CLASS = 'xterm-rows';
 var FG_CLASS_PREFIX = 'xterm-fg-';
@@ -8052,21 +8938,23 @@ var DomRenderer = (function (_super) {
     };
     DomRenderer.prototype._updateDimensions = function () {
         var _this = this;
-        this.dimensions.scaledCharWidth = this._terminal.charMeasure.width * window.devicePixelRatio;
-        this.dimensions.scaledCharHeight = this._terminal.charMeasure.height * window.devicePixelRatio;
-        this.dimensions.scaledCellWidth = this.dimensions.scaledCharWidth;
-        this.dimensions.scaledCellHeight = this.dimensions.scaledCharHeight;
+        this.dimensions.scaledCharWidth = Math.floor(this._terminal.charMeasure.width * window.devicePixelRatio);
+        this.dimensions.scaledCharHeight = Math.ceil(this._terminal.charMeasure.height * window.devicePixelRatio);
+        this.dimensions.scaledCellWidth = this.dimensions.scaledCharWidth + Math.round(this._terminal.options.letterSpacing);
+        this.dimensions.scaledCellHeight = Math.floor(this.dimensions.scaledCharHeight * this._terminal.options.lineHeight);
         this.dimensions.scaledCharLeft = 0;
         this.dimensions.scaledCharTop = 0;
         this.dimensions.scaledCanvasWidth = this.dimensions.scaledCellWidth * this._terminal.cols;
         this.dimensions.scaledCanvasHeight = this.dimensions.scaledCellHeight * this._terminal.rows;
-        this.dimensions.canvasWidth = this._terminal.charMeasure.width * this._terminal.cols;
-        this.dimensions.canvasHeight = this._terminal.charMeasure.height * this._terminal.rows;
-        this.dimensions.actualCellWidth = this._terminal.charMeasure.width;
-        this.dimensions.actualCellHeight = this._terminal.charMeasure.height;
+        this.dimensions.canvasWidth = Math.round(this.dimensions.scaledCanvasWidth / window.devicePixelRatio);
+        this.dimensions.canvasHeight = Math.round(this.dimensions.scaledCanvasHeight / window.devicePixelRatio);
+        this.dimensions.actualCellWidth = this.dimensions.canvasWidth / this._terminal.cols;
+        this.dimensions.actualCellHeight = this.dimensions.canvasHeight / this._terminal.rows;
         this._rowElements.forEach(function (element) {
             element.style.width = _this.dimensions.canvasWidth + "px";
-            element.style.height = _this._terminal.charMeasure.height + "px";
+            element.style.height = _this.dimensions.actualCellHeight + "px";
+            element.style.lineHeight = _this.dimensions.actualCellHeight + "px";
+            element.style.overflow = 'hidden';
         });
         if (!this._dimensionsStyleElement) {
             this._dimensionsStyleElement = document.createElement('style');
@@ -8076,12 +8964,12 @@ var DomRenderer = (function (_super) {
             " display: inline-block;" +
             " height: 100%;" +
             " vertical-align: top;" +
-            (" width: " + this._terminal.charMeasure.width + "px") +
+            (" width: " + this.dimensions.actualCellWidth + "px") +
             "}";
         this._dimensionsStyleElement.innerHTML = styles;
         this._selectionContainer.style.height = this._terminal._viewportElement.style.height;
-        this._rowContainer.style.width = this.dimensions.canvasWidth + "px";
-        this._rowContainer.style.height = this.dimensions.canvasHeight + "px";
+        this._terminal.screenElement.style.width = this.dimensions.canvasWidth + "px";
+        this._terminal.screenElement.style.height = this.dimensions.canvasHeight + "px";
     };
     DomRenderer.prototype.setTheme = function (theme) {
         var _this = this;
@@ -8140,6 +9028,9 @@ var DomRenderer = (function (_super) {
                 _this._terminalSelector + " ." + FG_CLASS_PREFIX + i + " { color: " + c.css + "; }" +
                     (_this._terminalSelector + " ." + BG_CLASS_PREFIX + i + " { background-color: " + c.css + "; }");
         });
+        styles +=
+            this._terminalSelector + " ." + FG_CLASS_PREFIX + Types_1.INVERTED_DEFAULT_COLOR + " { color: " + this.colorManager.colors.background.css + "; }" +
+                (this._terminalSelector + " ." + BG_CLASS_PREFIX + Types_1.INVERTED_DEFAULT_COLOR + " { background-color: " + this.colorManager.colors.foreground.css + "; }");
         this._themeStyleElement.innerHTML = styles;
         return this.colorManager.colors;
     };
@@ -8203,10 +9094,10 @@ var DomRenderer = (function (_super) {
     DomRenderer.prototype._createSelectionElement = function (row, colStart, colEnd, rowCount) {
         if (rowCount === void 0) { rowCount = 1; }
         var element = document.createElement('div');
-        element.style.height = rowCount * this._terminal.charMeasure.height + "px";
-        element.style.top = row * this._terminal.charMeasure.height + "px";
-        element.style.left = colStart * this._terminal.charMeasure.width + "px";
-        element.style.width = this._terminal.charMeasure.width * (colEnd - colStart) + "px";
+        element.style.height = rowCount * this.dimensions.actualCellHeight + "px";
+        element.style.top = row * this.dimensions.actualCellHeight + "px";
+        element.style.left = colStart * this.dimensions.actualCellWidth + "px";
+        element.style.width = this.dimensions.actualCellWidth * (colEnd - colStart) + "px";
         return element;
     };
     DomRenderer.prototype.onCursorMove = function () {
@@ -8232,7 +9123,7 @@ var DomRenderer = (function (_super) {
             var row = y + terminal.buffer.ydisp;
             var lineData = terminal.buffer.lines.get(row);
             var cursorStyle = terminal.options.cursorStyle;
-            rowElement.appendChild(this._rowFactory.createRow(lineData, row === cursorAbsoluteY, cursorStyle, cursorX, terminal.charMeasure.width, terminal.cols));
+            rowElement.appendChild(this._rowFactory.createRow(lineData, row === cursorAbsoluteY, cursorStyle, cursorX, this.dimensions.actualCellWidth, terminal.cols));
         }
         this._terminal.emit('refresh', { start: start, end: end });
     };
@@ -8253,10 +9144,16 @@ var DomRenderer = (function (_super) {
     };
     DomRenderer.prototype._setCellUnderline = function (x, x2, y, y2, cols, enabled) {
         while (x !== x2 || y !== y2) {
-            var span = this._rowElements[y].children[x];
-            span.style.textDecoration = enabled ? 'underline' : 'none';
-            x = (x + 1) % cols;
-            if (x === 0) {
+            var row = this._rowElements[y];
+            if (!row) {
+                return;
+            }
+            var span = row.children[x];
+            if (span) {
+                span.style.textDecoration = enabled ? 'underline' : 'none';
+            }
+            if (++x >= cols) {
+                x = 0;
                 y++;
             }
         }
@@ -8265,10 +9162,11 @@ var DomRenderer = (function (_super) {
 }(EventEmitter_1.EventEmitter));
 exports.DomRenderer = DomRenderer;
 
-},{"../../common/EventEmitter":17,"../../ui/RenderDebouncer":50,"../ColorManager":27,"./DomRendererRowFactory":43}],43:[function(require,module,exports){
+},{"../../common/EventEmitter":19,"../../ui/RenderDebouncer":60,"../ColorManager":31,"../atlas/Types":46,"./DomRendererRowFactory":48}],48:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Buffer_1 = require("../../Buffer");
+var Types_1 = require("../atlas/Types");
 exports.BOLD_CLASS = 'xterm-bold';
 exports.ITALIC_CLASS = 'xterm-italic';
 exports.CURSOR_CLASS = 'xterm-cursor';
@@ -8281,13 +9179,18 @@ var DomRendererRowFactory = (function () {
     }
     DomRendererRowFactory.prototype.createRow = function (lineData, isCursorRow, cursorStyle, cursorX, cellWidth, cols) {
         var fragment = this._document.createDocumentFragment();
-        var colCount = 0;
-        for (var x = 0; x < lineData.length; x++) {
-            if (colCount >= cols) {
-                continue;
-            }
+        var lineLength = 0;
+        for (var x = Math.min(lineData.length, cols) - 1; x >= 0; x--) {
             var charData = lineData.get(x);
-            var char = charData[Buffer_1.CHAR_DATA_CHAR_INDEX];
+            var code = charData[Buffer_1.CHAR_DATA_CODE_INDEX];
+            if (code !== Buffer_1.NULL_CELL_CODE || (isCursorRow && x === cursorX)) {
+                lineLength = x + 1;
+                break;
+            }
+        }
+        for (var x = 0; x < lineLength; x++) {
+            var charData = lineData.get(x);
+            var char = charData[Buffer_1.CHAR_DATA_CHAR_INDEX] || Buffer_1.WHITESPACE_CELL_CHAR;
             var attr = charData[Buffer_1.CHAR_DATA_ATTR_INDEX];
             var width = charData[Buffer_1.CHAR_DATA_WIDTH_INDEX];
             if (width === 0) {
@@ -8318,11 +9221,11 @@ var DomRendererRowFactory = (function () {
                 var temp = bg;
                 bg = fg;
                 fg = temp;
-                if (fg === 256) {
-                    fg = 0;
+                if (fg === Types_1.DEFAULT_COLOR) {
+                    fg = Types_1.INVERTED_DEFAULT_COLOR;
                 }
-                if (bg === 257) {
-                    bg = 15;
+                if (bg === Types_1.DEFAULT_COLOR) {
+                    bg = Types_1.INVERTED_DEFAULT_COLOR;
                 }
             }
             if (flags & 1) {
@@ -8335,14 +9238,13 @@ var DomRendererRowFactory = (function () {
                 charElement.classList.add(exports.ITALIC_CLASS);
             }
             charElement.textContent = char;
-            if (fg !== 257) {
+            if (fg !== Types_1.DEFAULT_COLOR) {
                 charElement.classList.add("xterm-fg-" + fg);
             }
-            if (bg !== 256) {
+            if (bg !== Types_1.DEFAULT_COLOR) {
                 charElement.classList.add("xterm-bg-" + bg);
             }
             fragment.appendChild(charElement);
-            colCount += width;
         }
         return fragment;
     };
@@ -8350,125 +9252,1192 @@ var DomRendererRowFactory = (function () {
 }());
 exports.DomRendererRowFactory = DomRendererRowFactory;
 
-},{"../../Buffer":2}],44:[function(require,module,exports){
+},{"../../Buffer":2,"../atlas/Types":46}],49:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-var Types_1 = require("./Types");
-var Browser_1 = require("../utils/Browser");
-function generateStaticCharAtlasTexture(context, canvasFactory, config) {
-    var cellWidth = config.scaledCharWidth + Types_1.CHAR_ATLAS_CELL_SPACING;
-    var cellHeight = config.scaledCharHeight + Types_1.CHAR_ATLAS_CELL_SPACING;
-    var canvas = canvasFactory(255 * cellWidth, (2 + 16 + 16) * cellHeight);
-    var ctx = canvas.getContext('2d', { alpha: config.allowTransparency });
-    ctx.fillStyle = config.colors.background.css;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.fillStyle = config.colors.foreground.css;
-    ctx.font = getFont(config.fontWeight, config);
-    ctx.textBaseline = 'top';
-    for (var i = 0; i < 256; i++) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(i * cellWidth, 0, cellWidth, cellHeight);
-        ctx.clip();
-        ctx.fillText(String.fromCharCode(i), i * cellWidth, 0);
-        ctx.restore();
+var WebglUtils_1 = require("./WebglUtils");
+var Buffer_1 = require("../../Buffer");
+var WebglRenderer_1 = require("./WebglRenderer");
+var RenderModel_1 = require("./RenderModel");
+var TypedArrayUtils_1 = require("../../common/TypedArrayUtils");
+var vertexShaderSource = "#version 300 es\nlayout (location = " + 0 + ") in vec2 a_unitquad;\nlayout (location = " + 1 + ") in vec2 a_cellpos;\nlayout (location = " + 2 + ") in vec2 a_offset;\nlayout (location = " + 3 + ") in vec2 a_size;\nlayout (location = " + 4 + ") in vec2 a_texcoord;\nlayout (location = " + 5 + ") in vec2 a_texsize;\n\nuniform mat4 u_projection;\nuniform vec2 u_resolution;\n\nout vec2 v_texcoord;\n\nvoid main() {\n  vec2 zeroToOne = (a_offset / u_resolution) + a_cellpos + (a_unitquad * a_size);\n  gl_Position = u_projection * vec4(zeroToOne, 0.0, 1.0);\n  v_texcoord = a_texcoord + a_unitquad * a_texsize;\n}";
+var fragmentShaderSource = "#version 300 es\nprecision mediump float;\n\nin vec2 v_texcoord;\n\nuniform sampler2D u_texture;\n\nout vec4 outColor;\n\nvoid main() {\n  outColor = texture(u_texture, v_texcoord);\n}";
+var INDICES_PER_CELL = 10;
+var BYTES_PER_CELL = INDICES_PER_CELL * Float32Array.BYTES_PER_ELEMENT;
+var CELL_POSITION_INDICES = 2;
+var GlyphRenderer = (function () {
+    function GlyphRenderer(_terminal, _colorManager, _gl, _dimensions) {
+        this._terminal = _terminal;
+        this._colorManager = _colorManager;
+        this._gl = _gl;
+        this._dimensions = _dimensions;
+        this._activeBuffer = 0;
+        this._vertices = {
+            count: 0,
+            attributes: new Float32Array(0),
+            attributesBuffers: [
+                new Float32Array(0),
+                new Float32Array(0)
+            ],
+            selectionAttributes: new Float32Array(0)
+        };
+        var gl = this._gl;
+        this._program = WebglUtils_1.createProgram(gl, vertexShaderSource, fragmentShaderSource);
+        this._projectionLocation = gl.getUniformLocation(this._program, 'u_projection');
+        this._resolutionLocation = gl.getUniformLocation(this._program, 'u_resolution');
+        this._textureLocation = gl.getUniformLocation(this._program, 'u_texture');
+        this._vertexArrayObject = gl.createVertexArray();
+        gl.bindVertexArray(this._vertexArrayObject);
+        var unitQuadVertices = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+        var unitQuadVerticesBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadVerticesBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, unitQuadVertices, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, this._gl.FLOAT, false, 0, 0);
+        var unitQuadElementIndices = new Uint8Array([0, 1, 3, 0, 2, 3]);
+        var elementIndicesBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elementIndicesBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, unitQuadElementIndices, gl.STATIC_DRAW);
+        this._attributesBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._attributesBuffer);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 2, gl.FLOAT, false, BYTES_PER_CELL, 0);
+        gl.vertexAttribDivisor(2, 1);
+        gl.enableVertexAttribArray(3);
+        gl.vertexAttribPointer(3, 2, gl.FLOAT, false, BYTES_PER_CELL, 2 * Float32Array.BYTES_PER_ELEMENT);
+        gl.vertexAttribDivisor(3, 1);
+        gl.enableVertexAttribArray(4);
+        gl.vertexAttribPointer(4, 2, gl.FLOAT, false, BYTES_PER_CELL, 4 * Float32Array.BYTES_PER_ELEMENT);
+        gl.vertexAttribDivisor(4, 1);
+        gl.enableVertexAttribArray(5);
+        gl.vertexAttribPointer(5, 2, gl.FLOAT, false, BYTES_PER_CELL, 6 * Float32Array.BYTES_PER_ELEMENT);
+        gl.vertexAttribDivisor(5, 1);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 2, gl.FLOAT, false, BYTES_PER_CELL, 8 * Float32Array.BYTES_PER_ELEMENT);
+        gl.vertexAttribDivisor(1, 1);
+        this._atlasTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this._atlasTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        this.onResize();
     }
-    ctx.save();
-    ctx.font = getFont(config.fontWeightBold, config);
-    for (var i = 0; i < 256; i++) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(i * cellWidth, cellHeight, cellWidth, cellHeight);
-        ctx.clip();
-        ctx.fillText(String.fromCharCode(i), i * cellWidth, cellHeight);
-        ctx.restore();
-    }
-    ctx.restore();
-    ctx.font = getFont(config.fontWeight, config);
-    for (var colorIndex = 0; colorIndex < 16; colorIndex++) {
-        var y = (colorIndex + 2) * cellHeight;
-        for (var i = 0; i < 256; i++) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(i * cellWidth, y, cellWidth, cellHeight);
-            ctx.clip();
-            ctx.fillStyle = config.colors.ansi[colorIndex].css;
-            ctx.fillText(String.fromCharCode(i), i * cellWidth, y);
-            ctx.restore();
+    GlyphRenderer.prototype.beginFrame = function () {
+        return this._atlas.beginFrame();
+    };
+    GlyphRenderer.prototype.updateCell = function (x, y, code, attr, bg, fg, chars) {
+        this._updateCell(this._vertices.attributes, x, y, code, attr, bg, fg, chars);
+    };
+    GlyphRenderer.prototype._updateCell = function (array, x, y, code, attr, bg, fg, chars) {
+        var terminal = this._terminal;
+        var i = (y * terminal.cols + x) * INDICES_PER_CELL;
+        if (code === Buffer_1.NULL_CELL_CODE || code === undefined) {
+            TypedArrayUtils_1.fill(array, 0, i, i + INDICES_PER_CELL - 1 - CELL_POSITION_INDICES);
+            return;
         }
-    }
-    ctx.font = getFont(config.fontWeightBold, config);
-    for (var colorIndex = 0; colorIndex < 16; colorIndex++) {
-        var y = (colorIndex + 2 + 16) * cellHeight;
-        for (var i = 0; i < 256; i++) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(i * cellWidth, y, cellWidth, cellHeight);
-            ctx.clip();
-            ctx.fillStyle = config.colors.ansi[colorIndex].css;
-            ctx.fillText(String.fromCharCode(i), i * cellWidth, y);
-            ctx.restore();
-        }
-    }
-    ctx.restore();
-    if (!('createImageBitmap' in context) || Browser_1.isFirefox || Browser_1.isSafari) {
-        if (canvas instanceof HTMLCanvasElement) {
-            return canvas;
-        }
-        return new Promise(function (r) { return r(canvas.transferToImageBitmap()); });
-    }
-    var charAtlasImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    clearColor(charAtlasImageData, config.colors.background);
-    return context.createImageBitmap(charAtlasImageData);
-}
-exports.generateStaticCharAtlasTexture = generateStaticCharAtlasTexture;
-function clearColor(imageData, color) {
-    var isEmpty = true;
-    var r = color.rgba >>> 24;
-    var g = color.rgba >>> 16 & 0xFF;
-    var b = color.rgba >>> 8 & 0xFF;
-    for (var offset = 0; offset < imageData.data.length; offset += 4) {
-        if (imageData.data[offset] === r &&
-            imageData.data[offset + 1] === g &&
-            imageData.data[offset + 2] === b) {
-            imageData.data[offset + 3] = 0;
+        var rasterizedGlyph;
+        if (chars && chars.length > 1) {
+            rasterizedGlyph = this._atlas.getRasterizedGlyphCombinedChar(chars, attr, bg, fg, this._terminal.options.enableBold);
         }
         else {
-            isEmpty = false;
+            rasterizedGlyph = this._atlas.getRasterizedGlyph(code, attr, bg, fg, this._terminal.options.enableBold);
         }
+        if (!rasterizedGlyph) {
+            TypedArrayUtils_1.fill(array, 0, i, i + INDICES_PER_CELL - 1 - CELL_POSITION_INDICES);
+            return;
+        }
+        array[i] = -rasterizedGlyph.offset.x + this._dimensions.scaledCharLeft;
+        array[i + 1] = -rasterizedGlyph.offset.y + this._dimensions.scaledCharTop;
+        array[i + 2] = rasterizedGlyph.size.x / this._dimensions.scaledCanvasWidth;
+        array[i + 3] = rasterizedGlyph.size.y / this._dimensions.scaledCanvasHeight;
+        array[i + 4] = rasterizedGlyph.texturePositionClipSpace.x;
+        array[i + 5] = rasterizedGlyph.texturePositionClipSpace.y;
+        array[i + 6] = rasterizedGlyph.sizeClipSpace.x;
+        array[i + 7] = rasterizedGlyph.sizeClipSpace.y;
+    };
+    GlyphRenderer.prototype.updateSelection = function (model, columnSelectMode) {
+        var terminal = this._terminal;
+        this._vertices.selectionAttributes = TypedArrayUtils_1.slice(this._vertices.attributes, 0);
+        var lumi = this._colorManager.getLuminance(this._colorManager.colors.background);
+        var fg = lumi > 0.5 ? 7 : 0;
+        var bg = lumi > 0.5 ? 0 : 7;
+        if (columnSelectMode) {
+            var startCol = model.selection.startCol;
+            var width = model.selection.endCol - startCol;
+            var height = model.selection.viewportCappedEndRow - model.selection.viewportCappedStartRow + 1;
+            for (var y = model.selection.viewportCappedStartRow; y < model.selection.viewportCappedStartRow + height; y++) {
+                this._updateSelectionRange(startCol, startCol + width, y, model, bg, fg);
+            }
+        }
+        else {
+            var startCol = model.selection.viewportStartRow === model.selection.viewportCappedStartRow ? model.selection.startCol : 0;
+            var startRowEndCol = model.selection.viewportCappedStartRow === model.selection.viewportCappedEndRow ? model.selection.endCol : terminal.cols;
+            this._updateSelectionRange(startCol, startRowEndCol, model.selection.viewportCappedStartRow, model, bg, fg);
+            var middleRowsCount = Math.max(model.selection.viewportCappedEndRow - model.selection.viewportCappedStartRow - 1, 0);
+            for (var y = (model.selection.viewportCappedStartRow + 1); y <= model.selection.viewportCappedStartRow + middleRowsCount; y++) {
+                this._updateSelectionRange(0, startRowEndCol, y, model, bg, fg);
+            }
+            if (model.selection.viewportCappedStartRow !== model.selection.viewportCappedEndRow) {
+                var endCol = model.selection.viewportEndRow === model.selection.viewportCappedEndRow ? model.selection.endCol : terminal.cols;
+                this._updateSelectionRange(0, endCol, model.selection.viewportCappedEndRow, model, bg, fg);
+            }
+        }
+    };
+    GlyphRenderer.prototype._updateSelectionRange = function (startCol, endCol, y, model, bg, fg) {
+        var terminal = this._terminal;
+        var row = y + terminal.buffer.ydisp;
+        var line;
+        for (var x = startCol; x < endCol; x++) {
+            var offset = (y * this._terminal.cols + x) * WebglRenderer_1.INDICIES_PER_CELL;
+            var attr = model.cells[offset + 1];
+            attr = attr & ~0x3ffff | bg << 9 | fg;
+            var code = model.cells[offset];
+            if (code & RenderModel_1.COMBINED_CHAR_BIT_MASK) {
+                if (!line) {
+                    line = terminal.buffer.lines.get(row);
+                }
+                var charData = line.get(x);
+                var chars = charData[Buffer_1.CHAR_DATA_CHAR_INDEX];
+                this._updateCell(this._vertices.selectionAttributes, x, y, model.cells[offset], attr, bg, fg, chars);
+            }
+            else {
+                this._updateCell(this._vertices.selectionAttributes, x, y, model.cells[offset], attr, bg, fg);
+            }
+        }
+    };
+    GlyphRenderer.prototype.onResize = function () {
+        var terminal = this._terminal;
+        var gl = this._gl;
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        var newCount = terminal.cols * terminal.rows * INDICES_PER_CELL;
+        if (this._vertices.count !== newCount) {
+            this._vertices.count = newCount;
+            this._vertices.attributes = new Float32Array(newCount);
+            for (var i_1 = 0; i_1 < this._vertices.attributesBuffers.length; i_1++) {
+                this._vertices.attributesBuffers[i_1] = new Float32Array(newCount);
+            }
+            var i = 0;
+            for (var y = 0; y < terminal.rows; y++) {
+                for (var x = 0; x < terminal.cols; x++) {
+                    i += 8;
+                    this._vertices.attributes[i++] = x / terminal.cols;
+                    this._vertices.attributes[i++] = y / terminal.rows;
+                }
+            }
+        }
+    };
+    GlyphRenderer.prototype.onThemeChanged = function () {
+    };
+    GlyphRenderer.prototype.render = function (renderModel, isSelectionVisible) {
+        if (!this._atlas) {
+            return;
+        }
+        var gl = this._gl;
+        gl.useProgram(this._program);
+        gl.bindVertexArray(this._vertexArrayObject);
+        this._activeBuffer = (this._activeBuffer + 1) % 2;
+        this._vertices.attributesBuffers[this._activeBuffer];
+        var bufferLength = 0;
+        for (var y = 0; y < renderModel.lineLengths.length; y++) {
+            var si = y * this._terminal.cols * INDICES_PER_CELL;
+            var sub = (isSelectionVisible ? this._vertices.selectionAttributes : this._vertices.attributes).subarray(si, si + renderModel.lineLengths[y] * INDICES_PER_CELL);
+            this._vertices.attributesBuffers[this._activeBuffer].set(sub, bufferLength);
+            bufferLength += sub.length;
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._attributesBuffer);
+        var buffer = this._vertices.attributesBuffers[this._activeBuffer].subarray(0, bufferLength);
+        gl.bufferData(gl.ARRAY_BUFFER, buffer, gl.STREAM_DRAW);
+        if (this._atlas.hasCanvasChanged) {
+            this._atlas.hasCanvasChanged = false;
+            gl.uniform1i(this._textureLocation, 0);
+            gl.activeTexture(gl.TEXTURE0 + 0);
+            gl.bindTexture(gl.TEXTURE_2D, this._atlasTexture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this._atlas.cacheCanvas);
+            gl.generateMipmap(gl.TEXTURE_2D);
+        }
+        gl.uniformMatrix4fv(this._projectionLocation, false, WebglUtils_1.PROJECTION_MATRIX);
+        gl.uniform2f(this._resolutionLocation, gl.canvas.width, gl.canvas.height);
+        gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_BYTE, 0, buffer.length / INDICES_PER_CELL);
+    };
+    GlyphRenderer.prototype.setAtlas = function (atlas) {
+        var gl = this._gl;
+        this._atlas = atlas;
+        gl.bindTexture(gl.TEXTURE_2D, this._atlasTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas.cacheCanvas);
+        gl.generateMipmap(gl.TEXTURE_2D);
+    };
+    GlyphRenderer.prototype.setDimensions = function (dimensions) {
+        this._dimensions = dimensions;
+    };
+    return GlyphRenderer;
+}());
+exports.GlyphRenderer = GlyphRenderer;
+
+},{"../../Buffer":2,"../../common/TypedArrayUtils":21,"./RenderModel":51,"./WebglRenderer":53,"./WebglUtils":54}],50:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var WebglUtils_1 = require("./WebglUtils");
+var TypedArrayUtils_1 = require("../../common/TypedArrayUtils");
+var Types_1 = require("../atlas/Types");
+var CharAtlasUtils_1 = require("../atlas/CharAtlasUtils");
+var vertexShaderSource = "#version 300 es\nlayout (location = " + 0 + ") in vec2 a_position;\nlayout (location = " + 1 + ") in vec2 a_size;\nlayout (location = " + 2 + ") in vec3 a_color;\nlayout (location = " + 3 + ") in vec2 a_unitquad;\n\nuniform mat4 u_projection;\nuniform vec2 u_resolution;\n\nout vec3 v_color;\n\nvoid main() {\n  vec2 zeroToOne = (a_position + (a_unitquad * a_size)) / u_resolution;\n  gl_Position = u_projection * vec4(zeroToOne, 0.0, 1.0);\n  v_color = a_color;\n}";
+var fragmentShaderSource = "#version 300 es\nprecision mediump float;\n\nin vec3 v_color;\n\nout vec4 outColor;\n\nvoid main() {\n  outColor = vec4(v_color, 1);\n}";
+var INDICES_PER_RECTANGLE = 8;
+var BYTES_PER_RECTANGLE = INDICES_PER_RECTANGLE * Float32Array.BYTES_PER_ELEMENT;
+var INITIAL_BUFFER_RECTANGLE_CAPACITY = 20 * INDICES_PER_RECTANGLE;
+var RectangleRenderer = (function () {
+    function RectangleRenderer(_terminal, _colorManager, _gl, _dimensions) {
+        this._terminal = _terminal;
+        this._colorManager = _colorManager;
+        this._gl = _gl;
+        this._dimensions = _dimensions;
+        this._vertices = {
+            count: 0,
+            attributes: new Float32Array(INITIAL_BUFFER_RECTANGLE_CAPACITY),
+            selection: new Float32Array(3 * INDICES_PER_RECTANGLE)
+        };
+        var gl = this._gl;
+        this._program = WebglUtils_1.createProgram(gl, vertexShaderSource, fragmentShaderSource);
+        this._resolutionLocation = gl.getUniformLocation(this._program, 'u_resolution');
+        this._projectionLocation = gl.getUniformLocation(this._program, 'u_projection');
+        this._vertexArrayObject = gl.createVertexArray();
+        gl.bindVertexArray(this._vertexArrayObject);
+        var unitQuadVertices = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]);
+        var unitQuadVerticesBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, unitQuadVerticesBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, unitQuadVertices, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(3);
+        gl.vertexAttribPointer(3, 2, this._gl.FLOAT, false, 0, 0);
+        var unitQuadElementIndices = new Uint8Array([0, 1, 3, 0, 2, 3]);
+        var elementIndicesBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, elementIndicesBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, unitQuadElementIndices, gl.STATIC_DRAW);
+        this._attributesBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._attributesBuffer);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, BYTES_PER_RECTANGLE, 0);
+        gl.vertexAttribDivisor(0, 1);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 2, gl.FLOAT, false, BYTES_PER_RECTANGLE, 2 * Float32Array.BYTES_PER_ELEMENT);
+        gl.vertexAttribDivisor(1, 1);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 4, gl.FLOAT, false, BYTES_PER_RECTANGLE, 4 * Float32Array.BYTES_PER_ELEMENT);
+        gl.vertexAttribDivisor(2, 1);
+        this._updateCachedColors();
     }
-    return isEmpty;
-}
-exports.clearColor = clearColor;
-function getFont(fontWeight, config) {
-    return fontWeight + " " + config.fontSize * config.devicePixelRatio + "px " + config.fontFamily;
-}
+    RectangleRenderer.prototype.render = function () {
+        var gl = this._gl;
+        gl.useProgram(this._program);
+        gl.bindVertexArray(this._vertexArrayObject);
+        gl.uniformMatrix4fv(this._projectionLocation, false, WebglUtils_1.PROJECTION_MATRIX);
+        gl.uniform2f(this._resolutionLocation, gl.canvas.width, gl.canvas.height);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._attributesBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, this._vertices.attributes, gl.DYNAMIC_DRAW);
+        gl.drawElementsInstanced(this._gl.TRIANGLES, 6, gl.UNSIGNED_BYTE, 0, this._vertices.count);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._attributesBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, this._vertices.selection, gl.DYNAMIC_DRAW);
+        gl.drawElementsInstanced(this._gl.TRIANGLES, 6, gl.UNSIGNED_BYTE, 0, 3);
+    };
+    RectangleRenderer.prototype.onResize = function () {
+        this._updateViewportRectangle();
+    };
+    RectangleRenderer.prototype.onThemeChanged = function () {
+        this._updateCachedColors();
+        this._updateViewportRectangle();
+    };
+    RectangleRenderer.prototype._updateCachedColors = function () {
+        this._bgFloat = this._colorToFloat32Array(this._colorManager.colors.background);
+        this._selectionFloat = this._colorToFloat32Array(this._colorManager.colors.selection);
+    };
+    RectangleRenderer.prototype._updateViewportRectangle = function () {
+        this._addRectangleFloat(this._vertices.attributes, 0, 0, 0, this._terminal.cols * this._dimensions.scaledCellWidth, this._terminal.rows * this._dimensions.scaledCellHeight, this._bgFloat);
+    };
+    RectangleRenderer.prototype.updateSelection = function (model, columnSelectMode) {
+        var terminal = this._terminal;
+        if (!model.hasSelection) {
+            TypedArrayUtils_1.fill(this._vertices.selection, 0, 0);
+            return;
+        }
+        if (columnSelectMode) {
+            var startCol = model.startCol;
+            var width = model.endCol - startCol;
+            var height = model.viewportCappedEndRow - model.viewportCappedStartRow + 1;
+            this._addRectangleFloat(this._vertices.selection, 0, startCol * this._dimensions.scaledCellWidth, model.viewportCappedStartRow * this._dimensions.scaledCellHeight, width * this._dimensions.scaledCellWidth, height * this._dimensions.scaledCellHeight, this._selectionFloat);
+            TypedArrayUtils_1.fill(this._vertices.selection, 0, INDICES_PER_RECTANGLE);
+        }
+        else {
+            var startCol = model.viewportStartRow === model.viewportCappedStartRow ? model.startCol : 0;
+            var startRowEndCol = model.viewportCappedStartRow === model.viewportCappedEndRow ? model.endCol : terminal.cols;
+            this._addRectangleFloat(this._vertices.selection, 0, startCol * this._dimensions.scaledCellWidth, model.viewportCappedStartRow * this._dimensions.scaledCellHeight, (startRowEndCol - startCol) * this._dimensions.scaledCellWidth, this._dimensions.scaledCellHeight, this._selectionFloat);
+            var middleRowsCount = Math.max(model.viewportCappedEndRow - model.viewportCappedStartRow - 1, 0);
+            this._addRectangleFloat(this._vertices.selection, INDICES_PER_RECTANGLE, 0, (model.viewportCappedStartRow + 1) * this._dimensions.scaledCellHeight, terminal.cols * this._dimensions.scaledCellWidth, middleRowsCount * this._dimensions.scaledCellHeight, this._selectionFloat);
+            if (model.viewportCappedStartRow !== model.viewportCappedEndRow) {
+                var endCol = model.viewportEndRow === model.viewportCappedEndRow ? model.endCol : terminal.cols;
+                this._addRectangleFloat(this._vertices.selection, INDICES_PER_RECTANGLE * 2, 0, model.viewportCappedEndRow * this._dimensions.scaledCellHeight, endCol * this._dimensions.scaledCellWidth, this._dimensions.scaledCellHeight, this._selectionFloat);
+            }
+            else {
+                TypedArrayUtils_1.fill(this._vertices.selection, 0, INDICES_PER_RECTANGLE * 2);
+            }
+        }
+    };
+    RectangleRenderer.prototype.updateBackgrounds = function (model) {
+        var terminal = this._terminal;
+        var vertices = this._vertices;
+        var rectangleCount = 1;
+        for (var y = 0; y < terminal.rows; y++) {
+            var currentStartX = -1;
+            var currentBg = Types_1.DEFAULT_COLOR;
+            for (var x = 0; x < terminal.cols; x++) {
+                var modelIndex = ((y * terminal.cols) + x) * 4;
+                var bg = model.cells[modelIndex + 2];
+                if (bg !== currentBg) {
+                    if (currentBg !== Types_1.DEFAULT_COLOR) {
+                        var offset = rectangleCount++ * INDICES_PER_RECTANGLE;
+                        this._updateRectangle(vertices, offset, currentBg, currentStartX, x, y);
+                    }
+                    currentStartX = x;
+                    currentBg = bg;
+                }
+            }
+            if (currentBg !== Types_1.DEFAULT_COLOR) {
+                var offset = rectangleCount++ * INDICES_PER_RECTANGLE;
+                this._updateRectangle(vertices, offset, currentBg, currentStartX, terminal.cols, y);
+            }
+        }
+        vertices.count = rectangleCount;
+    };
+    RectangleRenderer.prototype._updateRectangle = function (vertices, offset, bg, startX, endX, y) {
+        var color = null;
+        if (bg === Types_1.INVERTED_DEFAULT_COLOR) {
+            color = this._colorManager.colors.foreground;
+        }
+        else if (CharAtlasUtils_1.is256Color(bg)) {
+            color = this._colorManager.colors.ansi[bg];
+        }
+        if (vertices.attributes.length < offset + 4) {
+            vertices.attributes = WebglUtils_1.expandFloat32Array(vertices.attributes, this._terminal.rows * this._terminal.cols * INDICES_PER_RECTANGLE);
+        }
+        var x1 = startX * this._dimensions.scaledCellWidth;
+        var y1 = y * this._dimensions.scaledCellHeight;
+        var r = ((color.rgba >> 24) & 0xFF) / 255;
+        var g = ((color.rgba >> 16) & 0xFF) / 255;
+        var b = ((color.rgba >> 8) & 0xFF) / 255;
+        this._addRectangle(vertices.attributes, offset, x1, y1, (endX - startX) * this._dimensions.scaledCellWidth, this._dimensions.scaledCellHeight, r, g, b, 1);
+    };
+    RectangleRenderer.prototype._addRectangle = function (array, offset, x1, y1, width, height, r, g, b, a) {
+        array[offset] = x1;
+        array[offset + 1] = y1;
+        array[offset + 2] = width;
+        array[offset + 3] = height;
+        array[offset + 4] = r;
+        array[offset + 5] = g;
+        array[offset + 6] = b;
+        array[offset + 7] = a;
+    };
+    RectangleRenderer.prototype._addRectangleFloat = function (array, offset, x1, y1, width, height, color) {
+        array[offset] = x1;
+        array[offset + 1] = y1;
+        array[offset + 2] = width;
+        array[offset + 3] = height;
+        array[offset + 4] = color[0];
+        array[offset + 5] = color[1];
+        array[offset + 6] = color[2];
+        array[offset + 7] = color[3];
+    };
+    RectangleRenderer.prototype._colorToFloat32Array = function (color) {
+        return new Float32Array([
+            ((color.rgba >> 24) & 0xFF) / 255,
+            ((color.rgba >> 16) & 0xFF) / 255,
+            ((color.rgba >> 8) & 0xFF) / 255,
+            ((color.rgba) & 0xFF) / 255
+        ]);
+    };
+    return RectangleRenderer;
+}());
+exports.RectangleRenderer = RectangleRenderer;
 
-},{"../utils/Browser":46,"./Types":45}],45:[function(require,module,exports){
+},{"../../common/TypedArrayUtils":21,"../atlas/CharAtlasUtils":41,"../atlas/Types":46,"./WebglUtils":54}],51:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CHAR_ATLAS_CELL_SPACING = 1;
+var TypedArrayUtils_1 = require("../../common/TypedArrayUtils");
+exports.RENDER_MODEL_INDICIES_PER_CELL = 4;
+exports.COMBINED_CHAR_BIT_MASK = 0x80000000;
+var RenderModel = (function () {
+    function RenderModel() {
+        this.cells = new Uint32Array(0);
+        this.lineLengths = new Uint32Array(0);
+        this.selection = {
+            hasSelection: false,
+            viewportStartRow: 0,
+            viewportEndRow: 0,
+            viewportCappedStartRow: 0,
+            viewportCappedEndRow: 0,
+            startCol: 0,
+            endCol: 0
+        };
+    }
+    RenderModel.prototype.resize = function (cols, rows) {
+        var indexCount = cols * rows * exports.RENDER_MODEL_INDICIES_PER_CELL;
+        if (indexCount !== this.cells.length) {
+            this.cells = new Uint32Array(indexCount);
+            this.lineLengths = new Uint32Array(rows);
+        }
+    };
+    RenderModel.prototype.clear = function () {
+        TypedArrayUtils_1.fill(this.cells, 0, 0);
+        TypedArrayUtils_1.fill(this.lineLengths, 0, 0);
+        this.clearSelection();
+    };
+    RenderModel.prototype.clearSelection = function () {
+        this.selection.hasSelection = false;
+        this.selection.viewportStartRow = 0;
+        this.selection.viewportEndRow = 0;
+        this.selection.viewportCappedStartRow = 0;
+        this.selection.viewportCappedEndRow = 0;
+        this.selection.startCol = 0;
+        this.selection.endCol = 0;
+    };
+    return RenderModel;
+}());
+exports.RenderModel = RenderModel;
 
-},{}],46:[function(require,module,exports){
+},{"../../common/TypedArrayUtils":21}],52:[function(require,module,exports){
+"use strict";
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    }
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+var Types_1 = require("../atlas/Types");
+var BaseCharAtlas_1 = require("../atlas/BaseCharAtlas");
+var ColorManager_1 = require("../ColorManager");
+var CharAtlasGenerator_1 = require("../atlas/CharAtlasGenerator");
+var Buffer_1 = require("../../Buffer");
+var CharAtlasUtils_1 = require("../atlas/CharAtlasUtils");
+var TEXTURE_WIDTH = 1024;
+var TEXTURE_HEIGHT = 1024;
+var TEXTURE_CAPACITY = Math.floor(TEXTURE_HEIGHT * 0.8);
+var TRANSPARENT_COLOR = {
+    css: 'rgba(0, 0, 0, 0)',
+    rgba: 0
+};
+var NULL_RASTERIZED_GLYPH = {
+    offset: { x: 0, y: 0 },
+    texturePosition: { x: 0, y: 0 },
+    texturePositionClipSpace: { x: 0, y: 0 },
+    size: { x: 0, y: 0 },
+    sizeClipSpace: { x: 0, y: 0 }
+};
+var TMP_CANVAS_GLYPH_PADDING = 2;
+var WebglCharAtlas = (function (_super) {
+    __extends(WebglCharAtlas, _super);
+    function WebglCharAtlas(document, _config) {
+        var _this = _super.call(this) || this;
+        _this._config = _config;
+        _this._cacheMap = {};
+        _this._cacheMapCombined = {};
+        _this._currentRowY = 0;
+        _this._currentRowX = 0;
+        _this._currentRowHeight = 0;
+        _this.hasCanvasChanged = false;
+        _this._workBoundingBox = { top: 0, left: 0, bottom: 0, right: 0 };
+        _this.cacheCanvas = document.createElement('canvas');
+        _this.cacheCanvas.width = TEXTURE_WIDTH;
+        _this.cacheCanvas.height = TEXTURE_HEIGHT;
+        _this._cacheCtx = _this.cacheCanvas.getContext('2d', { alpha: true });
+        _this._tmpCanvas = document.createElement('canvas');
+        _this._tmpCanvas.width = _this._config.scaledCharWidth * 2 + TMP_CANVAS_GLYPH_PADDING * 2;
+        _this._tmpCanvas.height = _this._config.scaledCharHeight + TMP_CANVAS_GLYPH_PADDING * 2;
+        _this._tmpCtx = _this._tmpCanvas.getContext('2d', { alpha: _this._config.allowTransparency });
+        return _this;
+    }
+    WebglCharAtlas.prototype.dispose = function () {
+        if (this.cacheCanvas.parentElement) {
+            this.cacheCanvas.parentElement.removeChild(this.cacheCanvas);
+        }
+    };
+    WebglCharAtlas.prototype._doWarmUp = function () {
+        var _a;
+        for (var i = 33; i < 126; i++) {
+            var rasterizedGlyph = this._drawToCache(i, Buffer_1.DEFAULT_ATTR, Types_1.DEFAULT_COLOR, Types_1.DEFAULT_COLOR, true);
+            this._cacheMap[i] = (_a = {},
+                _a[Buffer_1.DEFAULT_ATTR] = rasterizedGlyph,
+                _a);
+        }
+    };
+    WebglCharAtlas.prototype.beginFrame = function () {
+        if (this._currentRowY > TEXTURE_CAPACITY) {
+            this._cacheCtx.clearRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
+            this._cacheMap = {};
+            this._currentRowHeight = 0;
+            this._currentRowX = 0;
+            this._currentRowY = 0;
+            this._doWarmUp();
+            return true;
+        }
+        return false;
+    };
+    WebglCharAtlas.prototype.getRasterizedGlyphCombinedChar = function (chars, attr, bg, fg, enableBold) {
+        var rasterizedGlyphSet = this._cacheMapCombined[chars];
+        if (!rasterizedGlyphSet) {
+            rasterizedGlyphSet = {};
+            this._cacheMapCombined[chars] = rasterizedGlyphSet;
+        }
+        var rasterizedGlyph = rasterizedGlyphSet[attr];
+        if (!rasterizedGlyph) {
+            rasterizedGlyph = this._drawToCache(chars, attr, bg, fg, enableBold);
+            rasterizedGlyphSet[attr] = rasterizedGlyph;
+        }
+        return rasterizedGlyph;
+    };
+    WebglCharAtlas.prototype.getRasterizedGlyph = function (code, attr, bg, fg, enableBold) {
+        if (code === 32) {
+            return;
+        }
+        var rasterizedGlyphSet = this._cacheMap[code];
+        if (!rasterizedGlyphSet) {
+            rasterizedGlyphSet = {};
+            this._cacheMap[code] = rasterizedGlyphSet;
+        }
+        var rasterizedGlyph = rasterizedGlyphSet[attr];
+        if (!rasterizedGlyph) {
+            rasterizedGlyph = this._drawToCache(code, attr, bg, fg, enableBold);
+            rasterizedGlyphSet[attr] = rasterizedGlyph;
+        }
+        return rasterizedGlyph;
+    };
+    WebglCharAtlas.prototype.draw = function (ctx, glyph, x, y) {
+        throw new Error('WebglCharAtlas is only compatible with the webgl renderer');
+    };
+    WebglCharAtlas.prototype._getColorFromAnsiIndex = function (idx) {
+        if (idx < this._config.colors.ansi.length) {
+            return this._config.colors.ansi[idx];
+        }
+        return ColorManager_1.DEFAULT_ANSI_COLORS[idx];
+    };
+    WebglCharAtlas.prototype._getBackgroundColor = function (bg) {
+        if (this._config.allowTransparency) {
+            return TRANSPARENT_COLOR;
+        }
+        else if (bg === Types_1.INVERTED_DEFAULT_COLOR) {
+            return this._config.colors.foreground;
+        }
+        else if (CharAtlasUtils_1.is256Color(bg)) {
+            return this._getColorFromAnsiIndex(bg);
+        }
+        return this._config.colors.background;
+    };
+    WebglCharAtlas.prototype._getForegroundColor = function (fg) {
+        if (fg === Types_1.INVERTED_DEFAULT_COLOR) {
+            return this._config.colors.background;
+        }
+        else if (CharAtlasUtils_1.is256Color(fg)) {
+            return this._getColorFromAnsiIndex(fg);
+        }
+        return this._config.colors.foreground;
+    };
+    WebglCharAtlas.prototype._drawToCache = function (codeOrChars, attr, bg, fg, enableBold) {
+        var chars = typeof codeOrChars === 'number' ? String.fromCharCode(codeOrChars) : codeOrChars;
+        this.hasCanvasChanged = true;
+        var flags = attr >> 18;
+        var bold = !!(flags & 1) && enableBold;
+        var dim = !!(flags & 32);
+        var italic = !!(flags & 64);
+        this._tmpCtx.save();
+        var backgroundColor = this._getBackgroundColor(bg);
+        this._tmpCtx.globalCompositeOperation = 'copy';
+        this._tmpCtx.fillStyle = backgroundColor.css;
+        this._tmpCtx.fillRect(0, 0, this._tmpCanvas.width, this._tmpCanvas.height);
+        this._tmpCtx.globalCompositeOperation = 'source-over';
+        var fontWeight = bold ? this._config.fontWeightBold : this._config.fontWeight;
+        var fontStyle = italic ? 'italic' : '';
+        this._tmpCtx.font =
+            fontStyle + " " + fontWeight + " " + this._config.fontSize * this._config.devicePixelRatio + "px " + this._config.fontFamily;
+        this._tmpCtx.textBaseline = 'top';
+        this._tmpCtx.fillStyle = this._getForegroundColor(fg).css;
+        if (dim) {
+            this._tmpCtx.globalAlpha = Types_1.DIM_OPACITY;
+        }
+        this._tmpCtx.fillText(chars, TMP_CANVAS_GLYPH_PADDING, TMP_CANVAS_GLYPH_PADDING);
+        this._tmpCtx.restore();
+        var imageData = this._tmpCtx.getImageData(0, 0, this._tmpCanvas.width, this._tmpCanvas.height);
+        var isEmpty = CharAtlasGenerator_1.clearColor(imageData, backgroundColor);
+        if (isEmpty) {
+            return NULL_RASTERIZED_GLYPH;
+        }
+        var rasterizedGlyph = this._findGlyphBoundingBox(imageData, this._workBoundingBox);
+        var clippedImageData = this._clipImageData(imageData, this._workBoundingBox);
+        if (this._currentRowX + this._config.scaledCharWidth > TEXTURE_WIDTH) {
+            this._currentRowX = 0;
+            this._currentRowY += this._currentRowHeight;
+            this._currentRowHeight = 0;
+        }
+        rasterizedGlyph.texturePosition.x = this._currentRowX;
+        rasterizedGlyph.texturePosition.y = this._currentRowY;
+        rasterizedGlyph.texturePositionClipSpace.x = this._currentRowX / TEXTURE_WIDTH;
+        rasterizedGlyph.texturePositionClipSpace.y = this._currentRowY / TEXTURE_HEIGHT;
+        this._currentRowHeight = Math.max(this._currentRowHeight, rasterizedGlyph.size.y);
+        this._currentRowX += rasterizedGlyph.size.x;
+        this._cacheCtx.putImageData(clippedImageData, rasterizedGlyph.texturePosition.x, rasterizedGlyph.texturePosition.y);
+        return rasterizedGlyph;
+    };
+    WebglCharAtlas.prototype._findGlyphBoundingBox = function (imageData, boundingBox) {
+        boundingBox.top = 0;
+        var found = false;
+        for (var y = 0; y < this._tmpCanvas.height; y++) {
+            for (var x = 0; x < this._tmpCanvas.width; x++) {
+                var alphaOffset = y * this._tmpCanvas.width * 4 + x * 4 + 3;
+                if (imageData.data[alphaOffset] !== 0) {
+                    boundingBox.top = y;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                break;
+            }
+        }
+        boundingBox.left = 0;
+        found = false;
+        for (var x = 0; x < this._tmpCanvas.width; x++) {
+            for (var y = 0; y < this._tmpCanvas.height; y++) {
+                var alphaOffset = y * this._tmpCanvas.width * 4 + x * 4 + 3;
+                if (imageData.data[alphaOffset] !== 0) {
+                    boundingBox.left = x;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                break;
+            }
+        }
+        boundingBox.right = this._tmpCanvas.width;
+        found = false;
+        for (var x = this._tmpCanvas.width - 1; x >= 0; x--) {
+            for (var y = 0; y < this._tmpCanvas.height; y++) {
+                var alphaOffset = y * this._tmpCanvas.width * 4 + x * 4 + 3;
+                if (imageData.data[alphaOffset] !== 0) {
+                    boundingBox.right = x;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                break;
+            }
+        }
+        boundingBox.bottom = this._tmpCanvas.height;
+        found = false;
+        for (var y = this._tmpCanvas.height - 1; y >= 0; y--) {
+            for (var x = 0; x < this._tmpCanvas.width; x++) {
+                var alphaOffset = y * this._tmpCanvas.width * 4 + x * 4 + 3;
+                if (imageData.data[alphaOffset] !== 0) {
+                    boundingBox.bottom = y;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                break;
+            }
+        }
+        return {
+            texturePosition: { x: 0, y: 0 },
+            texturePositionClipSpace: { x: 0, y: 0 },
+            size: {
+                x: boundingBox.right - boundingBox.left + 1,
+                y: boundingBox.bottom - boundingBox.top + 1
+            },
+            sizeClipSpace: {
+                x: (boundingBox.right - boundingBox.left + 1) / TEXTURE_WIDTH,
+                y: (boundingBox.bottom - boundingBox.top + 1) / TEXTURE_HEIGHT
+            },
+            offset: {
+                x: -boundingBox.left + TMP_CANVAS_GLYPH_PADDING,
+                y: -boundingBox.top + TMP_CANVAS_GLYPH_PADDING
+            }
+        };
+    };
+    WebglCharAtlas.prototype._clipImageData = function (imageData, boundingBox) {
+        var width = boundingBox.right - boundingBox.left + 1;
+        var height = boundingBox.bottom - boundingBox.top + 1;
+        var clippedData = new Uint8ClampedArray(width * height * 4);
+        for (var y = boundingBox.top; y <= boundingBox.bottom; y++) {
+            for (var x = boundingBox.left; x <= boundingBox.right; x++) {
+                var oldOffset = y * this._tmpCanvas.width * 4 + x * 4;
+                var newOffset = (y - boundingBox.top) * width * 4 + (x - boundingBox.left) * 4;
+                clippedData[newOffset] = imageData.data[oldOffset];
+                clippedData[newOffset + 1] = imageData.data[oldOffset + 1];
+                clippedData[newOffset + 2] = imageData.data[oldOffset + 2];
+                clippedData[newOffset + 3] = imageData.data[oldOffset + 3];
+            }
+        }
+        return new ImageData(clippedData, width, height);
+    };
+    return WebglCharAtlas;
+}(BaseCharAtlas_1.default));
+exports.default = WebglCharAtlas;
+
+},{"../../Buffer":2,"../ColorManager":31,"../atlas/BaseCharAtlas":38,"../atlas/CharAtlasGenerator":40,"../atlas/CharAtlasUtils":41,"../atlas/Types":46}],53:[function(require,module,exports){
+"use strict";
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    }
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+var EventEmitter_1 = require("../../common/EventEmitter");
+var ColorManager_1 = require("../ColorManager");
+var RenderDebouncer_1 = require("../../ui/RenderDebouncer");
+var GlyphRenderer_1 = require("./GlyphRenderer");
+var LinkRenderLayer_1 = require("../LinkRenderLayer");
+var CursorRenderLayer_1 = require("../CursorRenderLayer");
+var CharAtlasCache_1 = require("../atlas/CharAtlasCache");
+var ScreenDprMonitor_1 = require("../../ui/ScreenDprMonitor");
+var RectangleRenderer_1 = require("./RectangleRenderer");
+var Buffer_1 = require("../../Buffer");
+var Types_1 = require("../atlas/Types");
+var RenderModel_1 = require("./RenderModel");
+var Lifecycle_1 = require("../../ui/Lifecycle");
+exports.INDICIES_PER_CELL = 4;
+var WebglRenderer = (function (_super) {
+    __extends(WebglRenderer, _super);
+    function WebglRenderer(_terminal, theme) {
+        var _this = _super.call(this) || this;
+        _this._terminal = _terminal;
+        _this._model = new RenderModel_1.RenderModel();
+        _this._isPaused = false;
+        _this._needsFullRefresh = false;
+        _this._salvaged = false;
+        var allowTransparency = _this._terminal.options.allowTransparency;
+        _this.colorManager = new ColorManager_1.ColorManager(document, allowTransparency);
+        if (theme) {
+            _this.colorManager.setTheme(theme);
+            _this.colorManager.applyWebglSelectionColorHack();
+        }
+        _this._renderLayers = [
+            new LinkRenderLayer_1.LinkRenderLayer(_this._terminal.screenElement, 2, _this.colorManager.colors, _this._terminal),
+            new CursorRenderLayer_1.CursorRenderLayer(_this._terminal.screenElement, 3, _this.colorManager.colors)
+        ];
+        _this.dimensions = {
+            scaledCharWidth: null,
+            scaledCharHeight: null,
+            scaledCellWidth: null,
+            scaledCellHeight: null,
+            scaledCharLeft: null,
+            scaledCharTop: null,
+            scaledCanvasWidth: null,
+            scaledCanvasHeight: null,
+            canvasWidth: null,
+            canvasHeight: null,
+            actualCellWidth: null,
+            actualCellHeight: null
+        };
+        _this._devicePixelRatio = window.devicePixelRatio;
+        _this._updateDimensions();
+        _this._screenDprMonitor = new ScreenDprMonitor_1.ScreenDprMonitor();
+        _this._screenDprMonitor.setListener(function () { return _this.onWindowResize(window.devicePixelRatio); });
+        _this.register(_this._screenDprMonitor);
+        _this._renderDebouncer = new RenderDebouncer_1.RenderDebouncer(_this._terminal, _this._renderRows.bind(_this));
+        _this._canvas = document.createElement('canvas');
+        var contextAttributes = { antialias: false, depth: false };
+        _this._gl = _this._canvas.getContext('webgl2', contextAttributes);
+        if (!_this._gl) {
+            throw new Error('WebGL2 not supported');
+        }
+        _this.register(Lifecycle_1.addDisposableDomListener(_this._canvas, 'webglcontextlost', function () { _this._onContextLost(); }));
+        _this._terminal.screenElement.appendChild(_this._canvas);
+        _this._rectangleRenderer = new RectangleRenderer_1.RectangleRenderer(_this._terminal, _this.colorManager, _this._gl, _this.dimensions);
+        _this._glyphRenderer = new GlyphRenderer_1.GlyphRenderer(_this._terminal, _this.colorManager, _this._gl, _this.dimensions);
+        if ('IntersectionObserver' in window) {
+            var observer_1 = new IntersectionObserver(function (e) { return _this._onIntersectionChange(e[0]); }, { threshold: 0 });
+            observer_1.observe(_this._terminal.element);
+            _this.register({ dispose: function () { return observer_1.disconnect(); } });
+        }
+        WebglRenderer._contextHelper.onRendererCreated(_this);
+        return _this;
+    }
+    WebglRenderer.prototype.dispose = function () {
+        _super.prototype.dispose.call(this);
+        this._renderLayers.forEach(function (l) { return l.dispose(); });
+        this._terminal.screenElement.removeChild(this._canvas);
+        this._canvas.width = 0;
+        this._canvas.height = 0;
+        if (!this._gl.isContextLost()) {
+            console.log('Force context loss');
+            this.loseContext();
+        }
+        WebglRenderer._contextHelper.onRendererDestroyed(this);
+    };
+    WebglRenderer.prototype.loseContext = function () {
+        this._gl.getExtension('WEBGL_lose_context').loseContext();
+    };
+    WebglRenderer.prototype._onContextLost = function () {
+        if (this._salvaged) {
+            this._salvaged = false;
+            return;
+        }
+        WebglRenderer._contextHelper.recoverContext(this, true);
+    };
+    WebglRenderer.prototype._onIntersectionChange = function (entry) {
+        var wasPaused = this._isPaused;
+        this._isPaused = entry.intersectionRatio === 0;
+        if (!this._isPaused) {
+            if (wasPaused) {
+                WebglRenderer._contextHelper.onRendererUnpaused(this);
+            }
+            if (this._gl.isContextLost()) {
+                WebglRenderer._contextHelper.recoverContext(this, false);
+                return;
+            }
+            if (this._needsFullRefresh) {
+                this._terminal.refresh(0, this._terminal.rows - 1);
+            }
+        }
+    };
+    WebglRenderer.prototype._refreshViewport = function () {
+        this._model.clear();
+        if (this._isPaused) {
+            this._needsFullRefresh = true;
+        }
+        else {
+            this._terminal.refresh(0, this._terminal.rows - 1);
+        }
+    };
+    WebglRenderer.prototype.setTheme = function (theme) {
+        var _this = this;
+        if (theme) {
+            this.colorManager.setTheme(theme);
+        }
+        this._renderLayers.forEach(function (l) {
+            l.onThemeChanged(_this._terminal, _this.colorManager.colors);
+            l.reset(_this._terminal);
+        });
+        this._rectangleRenderer.onThemeChanged();
+        this._glyphRenderer.onThemeChanged();
+        this._refreshCharAtlas();
+        this._refreshViewport();
+        return this.colorManager.colors;
+    };
+    WebglRenderer.prototype.onWindowResize = function (devicePixelRatio) {
+        if (this._devicePixelRatio !== devicePixelRatio) {
+            this._devicePixelRatio = devicePixelRatio;
+            this.onResize(this._terminal.cols, this._terminal.rows, devicePixelRatio);
+        }
+    };
+    WebglRenderer.prototype.onResize = function (cols, rows, devicePixelRatio) {
+        var _this = this;
+        if (devicePixelRatio === void 0) { devicePixelRatio = window.devicePixelRatio; }
+        this._updateDimensions(devicePixelRatio);
+        this._model.resize(this._terminal.cols, this._terminal.rows);
+        this._rectangleRenderer.onResize();
+        this._renderLayers.forEach(function (l) { return l.resize(_this._terminal, _this.dimensions); });
+        this._canvas.width = this.dimensions.scaledCanvasWidth;
+        this._canvas.height = this.dimensions.scaledCanvasHeight;
+        this._canvas.style.width = this.dimensions.canvasWidth + "px";
+        this._canvas.style.height = this.dimensions.canvasHeight + "px";
+        this._terminal.screenElement.style.width = this.dimensions.canvasWidth + "px";
+        this._terminal.screenElement.style.height = this.dimensions.canvasHeight + "px";
+        this._glyphRenderer.setDimensions(this.dimensions);
+        this._glyphRenderer.onResize();
+        this._refreshCharAtlas(devicePixelRatio);
+        this._refreshViewport();
+        this.emit('resize', {
+            width: this.dimensions.canvasWidth,
+            height: this.dimensions.canvasHeight
+        });
+    };
+    WebglRenderer.prototype.onCharSizeChanged = function () {
+        this.onResize(this._terminal.cols, this._terminal.rows);
+    };
+    WebglRenderer.prototype.onBlur = function () {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.onBlur(_this._terminal); });
+    };
+    WebglRenderer.prototype.onFocus = function () {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.onFocus(_this._terminal); });
+    };
+    WebglRenderer.prototype.onSelectionChanged = function (start, end, columnSelectMode) {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.onSelectionChanged(_this._terminal, start, end, columnSelectMode); });
+        this._updateSelectionModel(start, end);
+        this._rectangleRenderer.updateSelection(this._model.selection, columnSelectMode);
+        this._glyphRenderer.updateSelection(this._model, columnSelectMode);
+        this.refreshRows(0, this._terminal.rows - 1);
+    };
+    WebglRenderer.prototype.onCursorMove = function () {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.onCursorMove(_this._terminal); });
+    };
+    WebglRenderer.prototype.onOptionsChanged = function () {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.onOptionsChanged(_this._terminal); });
+        this._updateDimensions();
+        this._refreshCharAtlas();
+    };
+    WebglRenderer.prototype._refreshCharAtlas = function (devicePixelRatio) {
+        if (devicePixelRatio === void 0) { devicePixelRatio = window.devicePixelRatio; }
+        if (this.dimensions.scaledCharWidth <= 0 && this.dimensions.scaledCharHeight <= 0) {
+            return;
+        }
+        var atlas = CharAtlasCache_1.acquireCharAtlas(this._terminal, this.colorManager.colors, this.dimensions.scaledCharWidth, this.dimensions.scaledCharHeight, devicePixelRatio);
+        if (!('getRasterizedGlyph' in atlas)) {
+            throw new Error('The webgl renderer only works with the webgl char atlas');
+        }
+        this._charAtlas = atlas;
+        this._charAtlas.warmUp();
+        this._glyphRenderer.setAtlas(this._charAtlas);
+    };
+    WebglRenderer.prototype.clear = function () {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.reset(_this._terminal); });
+    };
+    WebglRenderer.prototype.refreshRows = function (start, end) {
+        if (this._isPaused) {
+            this._needsFullRefresh = true;
+            return;
+        }
+        this._renderDebouncer.refresh(start, end);
+    };
+    WebglRenderer.prototype.registerCharacterJoiner = function (handler) {
+        return -1;
+    };
+    WebglRenderer.prototype.deregisterCharacterJoiner = function (joinerId) {
+        return false;
+    };
+    WebglRenderer.prototype._renderRows = function (start, end) {
+        var _this = this;
+        this._renderLayers.forEach(function (l) { return l.onGridChanged(_this._terminal, start, end); });
+        if (this._glyphRenderer.beginFrame()) {
+            this._model.clear();
+        }
+        this._updateModel(start, end);
+        this._rectangleRenderer.render();
+        this._glyphRenderer.render(this._model, this._model.selection.hasSelection);
+        this._terminal.emit('refresh', { start: start, end: end });
+    };
+    WebglRenderer.prototype._updateModel = function (start, end) {
+        var terminal = this._terminal;
+        for (var y = start; y <= end; y++) {
+            var row = y + terminal.buffer.ydisp;
+            var line = terminal.buffer.lines.get(row);
+            this._model.lineLengths[y] = 0;
+            for (var x = 0; x < terminal.cols; x++) {
+                var charData = line.get(x);
+                var chars = charData[Buffer_1.CHAR_DATA_CHAR_INDEX];
+                var code = charData[Buffer_1.CHAR_DATA_CODE_INDEX];
+                var attr = charData[Buffer_1.CHAR_DATA_ATTR_INDEX];
+                var i = ((y * terminal.cols) + x) * exports.INDICIES_PER_CELL;
+                if (code !== Buffer_1.NULL_CELL_CODE) {
+                    this._model.lineLengths[y] = x + 1;
+                }
+                if (this._model.cells[i] === code && this._model.cells[i + 1] === attr) {
+                    continue;
+                }
+                var flags = attr >> 18;
+                var bg = attr & 0x1ff;
+                var fg = (attr >> 9) & 0x1ff;
+                if (flags & 8) {
+                    var temp = bg;
+                    bg = fg;
+                    fg = temp;
+                    if (fg === Types_1.DEFAULT_COLOR) {
+                        fg = Types_1.INVERTED_DEFAULT_COLOR;
+                    }
+                    if (bg === Types_1.DEFAULT_COLOR) {
+                        bg = Types_1.INVERTED_DEFAULT_COLOR;
+                    }
+                }
+                var drawInBrightColor = terminal.options.drawBoldTextInBrightColors && !!(flags & 1) && fg < 8 && fg !== Types_1.INVERTED_DEFAULT_COLOR;
+                fg += drawInBrightColor ? 8 : 0;
+                if (chars.length > 1) {
+                    code = code | RenderModel_1.COMBINED_CHAR_BIT_MASK;
+                }
+                this._model.cells[i] = code;
+                this._model.cells[i + 1] = attr;
+                this._model.cells[i + 2] = bg;
+                this._model.cells[i + 3] = fg;
+                this._glyphRenderer.updateCell(x, y, code, attr, bg, fg, chars);
+            }
+        }
+        this._rectangleRenderer.updateBackgrounds(this._model);
+    };
+    WebglRenderer.prototype._updateSelectionModel = function (start, end) {
+        var terminal = this._terminal;
+        if (!start || !end || (start[0] === end[0] && start[1] === end[1])) {
+            this._model.clearSelection();
+            return;
+        }
+        var viewportStartRow = start[1] - terminal.buffer.ydisp;
+        var viewportEndRow = end[1] - terminal.buffer.ydisp;
+        var viewportCappedStartRow = Math.max(viewportStartRow, 0);
+        var viewportCappedEndRow = Math.min(viewportEndRow, terminal.rows - 1);
+        if (viewportCappedStartRow >= terminal.rows || viewportCappedEndRow < 0) {
+            this._model.clearSelection();
+            return;
+        }
+        this._model.selection.hasSelection = true;
+        this._model.selection.viewportStartRow = viewportStartRow;
+        this._model.selection.viewportEndRow = viewportEndRow;
+        this._model.selection.viewportCappedStartRow = viewportCappedStartRow;
+        this._model.selection.viewportCappedEndRow = viewportCappedEndRow;
+        this._model.selection.startCol = start[0];
+        this._model.selection.endCol = end[0];
+    };
+    WebglRenderer.prototype._updateDimensions = function (devicePixelRatio) {
+        if (devicePixelRatio === void 0) { devicePixelRatio = window.devicePixelRatio; }
+        if (!this._terminal.charMeasure.width || !this._terminal.charMeasure.height) {
+            return;
+        }
+        this.dimensions.scaledCharWidth = Math.floor(this._terminal.charMeasure.width * devicePixelRatio);
+        this.dimensions.scaledCharHeight = Math.ceil(this._terminal.charMeasure.height * devicePixelRatio);
+        this.dimensions.scaledCellHeight = Math.floor(this.dimensions.scaledCharHeight * this._terminal.options.lineHeight);
+        this.dimensions.scaledCharTop = this._terminal.options.lineHeight === 1 ? 0 : Math.round((this.dimensions.scaledCellHeight - this.dimensions.scaledCharHeight) / 2);
+        this.dimensions.scaledCellWidth = this.dimensions.scaledCharWidth + Math.round(this._terminal.options.letterSpacing);
+        this.dimensions.scaledCharLeft = Math.floor(this._terminal.options.letterSpacing / 2);
+        this.dimensions.scaledCanvasHeight = this._terminal.rows * this.dimensions.scaledCellHeight;
+        this.dimensions.scaledCanvasWidth = this._terminal.cols * this.dimensions.scaledCellWidth;
+        this.dimensions.canvasHeight = Math.round(this.dimensions.scaledCanvasHeight / devicePixelRatio);
+        this.dimensions.canvasWidth = Math.round(this.dimensions.scaledCanvasWidth / devicePixelRatio);
+        this.dimensions.actualCellHeight = this.dimensions.scaledCellHeight / devicePixelRatio;
+        this.dimensions.actualCellWidth = this.dimensions.scaledCellWidth / devicePixelRatio;
+    };
+    WebglRenderer._contextHelper = new (function () {
+        function class_1() {
+            this._recoverTimeout = null;
+            this._lru = [];
+            this._pendingRecover = [];
+        }
+        class_1.prototype.onRendererUnpaused = function (renderer) {
+            var index = this._lru.indexOf(renderer._terminal);
+            if (index >= 0) {
+                this._lru.splice(index, 1);
+            }
+            this._lru.push(renderer._terminal);
+        };
+        class_1.prototype.onRendererCreated = function (renderer) {
+            this.onRendererUnpaused(renderer);
+        };
+        class_1.prototype.onRendererDestroyed = function (renderer) {
+            var index = this._lru.indexOf(renderer._terminal);
+            this._lru.splice(index, 1);
+        };
+        class_1.prototype.recoverContext = function (renderer, justLost) {
+            var _this = this;
+            this._pendingRecover.push({ renderer: renderer, justLost: justLost });
+            if (!this._recoverTimeout) {
+                this._recoverTimeout = setTimeout(function () {
+                    _this._recoverTimeout = null;
+                    var toRecover = _this._pendingRecover.filter(function (_a) {
+                        var renderer = _a.renderer;
+                        return !renderer._isPaused;
+                    });
+                    _this._pendingRecover = [];
+                    if (toRecover.length > 0) {
+                        _this._recoverPendingContexts(toRecover);
+                    }
+                }, 0);
+            }
+        };
+        class_1.prototype._recoverPendingContexts = function (toRecover) {
+            var killCount = 0;
+            for (var _i = 0, _a = this._lru; _i < _a.length; _i++) {
+                var term = _a[_i];
+                var renderer = term.renderer;
+                if (renderer._isPaused && !renderer._gl.isContextLost()) {
+                    renderer.loseContext();
+                    renderer._salvaged = true;
+                    killCount++;
+                    if (killCount >= toRecover.length) {
+                        break;
+                    }
+                }
+            }
+            var requireKill = toRecover.some(function (_a) {
+                var justLost = _a.justLost;
+                return justLost;
+            });
+            if (requireKill && killCount === 0) {
+                console.error('Too many simultaneous webgl contexts');
+                return;
+            }
+            toRecover.forEach(function (_a) {
+                var renderer = _a.renderer;
+                renderer._terminal.recreateRenderer();
+            });
+        };
+        return class_1;
+    }());
+    return WebglRenderer;
+}(EventEmitter_1.EventEmitter));
+exports.WebglRenderer = WebglRenderer;
+
+},{"../../Buffer":2,"../../common/EventEmitter":19,"../../ui/Lifecycle":57,"../../ui/RenderDebouncer":60,"../../ui/ScreenDprMonitor":61,"../ColorManager":31,"../CursorRenderLayer":32,"../LinkRenderLayer":34,"../atlas/CharAtlasCache":39,"../atlas/Types":46,"./GlyphRenderer":49,"./RectangleRenderer":50,"./RenderModel":51}],54:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-var isNode = (typeof navigator === 'undefined') ? true : false;
-var userAgent = (isNode) ? 'node' : navigator.userAgent;
-var platform = (isNode) ? 'node' : navigator.platform;
-exports.isFirefox = !!~userAgent.indexOf('Firefox');
-exports.isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
-exports.isMSIE = !!~userAgent.indexOf('MSIE') || !!~userAgent.indexOf('Trident');
-exports.isMac = contains(['Macintosh', 'MacIntel', 'MacPPC', 'Mac68K'], platform);
-exports.isIpad = platform === 'iPad';
-exports.isIphone = platform === 'iPhone';
-exports.isMSWindows = contains(['Windows', 'Win16', 'Win32', 'WinCE'], platform);
-exports.isLinux = platform.indexOf('Linux') >= 0;
-function contains(arr, el) {
-    return arr.indexOf(el) >= 0;
+exports.PROJECTION_MATRIX = new Float32Array([
+    2, 0, 0, 0,
+    0, -2, 0, 0,
+    0, 0, 1, 0,
+    -1, 1, 0, 1
+]);
+function createProgram(gl, vertexSource, fragmentSource) {
+    var program = gl.createProgram();
+    gl.attachShader(program, createShader(gl, gl.VERTEX_SHADER, vertexSource));
+    gl.attachShader(program, createShader(gl, gl.FRAGMENT_SHADER, fragmentSource));
+    gl.linkProgram(program);
+    var success = gl.getProgramParameter(program, gl.LINK_STATUS);
+    if (success) {
+        return program;
+    }
+    console.log(gl.getProgramInfoLog(program));
+    gl.deleteProgram(program);
 }
+exports.createProgram = createProgram;
+function createShader(gl, type, source) {
+    var shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+    if (success) {
+        return shader;
+    }
+    console.log(gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+}
+exports.createShader = createShader;
+function expandFloat32Array(source, max) {
+    var newLength = Math.min(source.length * 2, max);
+    var newArray = new Float32Array(newLength);
+    for (var i = 0; i < source.length; i++) {
+        newArray[i] = source[i];
+    }
+    return newArray;
+}
+exports.expandFloat32Array = expandFloat32Array;
 
-},{}],47:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -8519,9 +10488,10 @@ var CharMeasure = (function (_super) {
         if (geometry.width === 0 || geometry.height === 0) {
             return;
         }
-        if (this._width !== geometry.width || this._height !== geometry.height) {
+        var adjustedHeight = Math.ceil(geometry.height);
+        if (this._width !== geometry.width || this._height !== adjustedHeight) {
             this._width = geometry.width;
-            this._height = Math.ceil(geometry.height);
+            this._height = adjustedHeight;
             this.emit('charsizechanged');
         }
     };
@@ -8529,7 +10499,87 @@ var CharMeasure = (function (_super) {
 }(EventEmitter_1.EventEmitter));
 exports.CharMeasure = CharMeasure;
 
-},{"../common/EventEmitter":17}],48:[function(require,module,exports){
+},{"../common/EventEmitter":19}],56:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+function prepareTextForTerminal(text) {
+    return text.replace(/\r?\n/g, '\r');
+}
+exports.prepareTextForTerminal = prepareTextForTerminal;
+function bracketTextForPaste(text, bracketedPasteMode) {
+    if (bracketedPasteMode) {
+        return '\x1b[200~' + text + '\x1b[201~';
+    }
+    return text;
+}
+exports.bracketTextForPaste = bracketTextForPaste;
+function copyHandler(ev, term, selectionManager) {
+    if (term.browser.isMSIE) {
+        window.clipboardData.setData('Text', selectionManager.selectionText);
+    }
+    else {
+        ev.clipboardData.setData('text/plain', selectionManager.selectionText);
+    }
+    ev.preventDefault();
+}
+exports.copyHandler = copyHandler;
+function pasteHandler(ev, term) {
+    ev.stopPropagation();
+    var text;
+    var dispatchPaste = function (text) {
+        text = prepareTextForTerminal(text);
+        text = bracketTextForPaste(text, term.bracketedPasteMode);
+        term.handler(text);
+        term.textarea.value = '';
+        term.emit('paste', text);
+        term.cancel(ev);
+    };
+    if (term.browser.isMSIE) {
+        if (window.clipboardData) {
+            text = window.clipboardData.getData('Text');
+            dispatchPaste(text);
+        }
+    }
+    else {
+        if (ev.clipboardData) {
+            text = ev.clipboardData.getData('text/plain');
+            dispatchPaste(text);
+        }
+    }
+}
+exports.pasteHandler = pasteHandler;
+function moveTextAreaUnderMouseCursor(ev, term) {
+    var pos = term.screenElement.getBoundingClientRect();
+    var left = ev.clientX - pos.left - 10;
+    var top = ev.clientY - pos.top - 10;
+    term.textarea.style.position = 'absolute';
+    term.textarea.style.width = '20px';
+    term.textarea.style.height = '20px';
+    term.textarea.style.left = left + "px";
+    term.textarea.style.top = top + "px";
+    term.textarea.style.zIndex = '1000';
+    term.textarea.focus();
+    setTimeout(function () {
+        term.textarea.style.position = null;
+        term.textarea.style.width = null;
+        term.textarea.style.height = null;
+        term.textarea.style.left = null;
+        term.textarea.style.top = null;
+        term.textarea.style.zIndex = null;
+    }, 200);
+}
+exports.moveTextAreaUnderMouseCursor = moveTextAreaUnderMouseCursor;
+function rightClickHandler(ev, term, selectionManager, shouldSelectWord) {
+    moveTextAreaUnderMouseCursor(ev, term);
+    if (shouldSelectWord && !selectionManager.isClickInSelection(ev)) {
+        selectionManager.selectWordAtCursor(ev);
+    }
+    term.textarea.value = selectionManager.selectionText;
+    term.textarea.select();
+}
+exports.rightClickHandler = rightClickHandler;
+
+},{}],57:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 function addDisposableDomListener(node, type, handler, useCapture) {
@@ -8547,7 +10597,47 @@ function addDisposableDomListener(node, type, handler, useCapture) {
 }
 exports.addDisposableDomListener = addDisposableDomListener;
 
-},{}],49:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var MouseHelper = (function () {
+    function MouseHelper(_renderer) {
+        this._renderer = _renderer;
+    }
+    MouseHelper.prototype.setRenderer = function (renderer) {
+        this._renderer = renderer;
+    };
+    MouseHelper.getCoordsRelativeToElement = function (event, element) {
+        var rect = element.getBoundingClientRect();
+        return [event.clientX - rect.left, event.clientY - rect.top];
+    };
+    MouseHelper.prototype.getCoords = function (event, element, charMeasure, colCount, rowCount, isSelection) {
+        if (!charMeasure.width || !charMeasure.height) {
+            return null;
+        }
+        var coords = MouseHelper.getCoordsRelativeToElement(event, element);
+        if (!coords) {
+            return null;
+        }
+        coords[0] = Math.ceil((coords[0] + (isSelection ? this._renderer.dimensions.actualCellWidth / 2 : 0)) / this._renderer.dimensions.actualCellWidth);
+        coords[1] = Math.ceil(coords[1] / this._renderer.dimensions.actualCellHeight);
+        coords[0] = Math.min(Math.max(coords[0], 1), colCount + (isSelection ? 1 : 0));
+        coords[1] = Math.min(Math.max(coords[1], 1), rowCount);
+        return coords;
+    };
+    MouseHelper.prototype.getRawByteCoords = function (event, element, charMeasure, colCount, rowCount) {
+        var coords = this.getCoords(event, element, charMeasure, colCount, rowCount);
+        var x = coords[0];
+        var y = coords[1];
+        x += 32;
+        y += 32;
+        return { x: x, y: y };
+    };
+    return MouseHelper;
+}());
+exports.MouseHelper = MouseHelper;
+
+},{}],59:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -8578,6 +10668,7 @@ var MouseZoneManager = (function (_super) {
         _this._lastHoverCoords = [null, null];
         _this.register(Lifecycle_2.addDisposableDomListener(_this._terminal.element, 'mousedown', function (e) { return _this._onMouseDown(e); }));
         _this._mouseMoveListener = function (e) { return _this._onMouseMove(e); };
+        _this._mouseLeaveListener = function (e) { return _this._onMouseLeave(e); };
         _this._clickListener = function (e) { return _this._onClick(e); };
         return _this;
     }
@@ -8619,6 +10710,7 @@ var MouseZoneManager = (function (_super) {
         if (!this._areZonesActive) {
             this._areZonesActive = true;
             this._terminal.element.addEventListener('mousemove', this._mouseMoveListener);
+            this._terminal.element.addEventListener('mouseleave', this._mouseLeaveListener);
             this._terminal.element.addEventListener('click', this._clickListener);
         }
     };
@@ -8626,6 +10718,7 @@ var MouseZoneManager = (function (_super) {
         if (this._areZonesActive) {
             this._areZonesActive = false;
             this._terminal.element.removeEventListener('mousemove', this._mouseMoveListener);
+            this._terminal.element.removeEventListener('mouseleave', this._mouseLeaveListener);
             this._terminal.element.removeEventListener('click', this._clickListener);
         }
     };
@@ -8676,6 +10769,15 @@ var MouseZoneManager = (function (_super) {
             }
         }
     };
+    MouseZoneManager.prototype._onMouseLeave = function (e) {
+        if (this._currentZone) {
+            this._currentZone.leaveCallback();
+            this._currentZone = null;
+            if (this._tooltipTimeout) {
+                clearTimeout(this._tooltipTimeout);
+            }
+        }
+    };
     MouseZoneManager.prototype._onClick = function (e) {
         var zone = this._findZoneEventAt(e);
         if (zone) {
@@ -8685,7 +10787,7 @@ var MouseZoneManager = (function (_super) {
         }
     };
     MouseZoneManager.prototype._findZoneEventAt = function (e) {
-        var coords = this._terminal.mouseHelper.getCoords(e, this._terminal.screenElement, this._terminal.charMeasure, this._terminal.options.lineHeight, this._terminal.cols, this._terminal.rows);
+        var coords = this._terminal.mouseHelper.getCoords(e, this._terminal.screenElement, this._terminal.charMeasure, this._terminal.cols, this._terminal.rows);
         if (!coords) {
             return null;
         }
@@ -8727,7 +10829,7 @@ var MouseZone = (function () {
 }());
 exports.MouseZone = MouseZone;
 
-},{"../common/Lifecycle":18,"./Lifecycle":48}],50:[function(require,module,exports){
+},{"../common/Lifecycle":20,"./Lifecycle":57}],60:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var RenderDebouncer = (function () {
@@ -8767,7 +10869,7 @@ var RenderDebouncer = (function () {
 }());
 exports.RenderDebouncer = RenderDebouncer;
 
-},{}],51:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -8825,83 +10927,12 @@ var ScreenDprMonitor = (function (_super) {
 }(Lifecycle_1.Disposable));
 exports.ScreenDprMonitor = ScreenDprMonitor;
 
-},{"../common/Lifecycle":18}],52:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.clone = function (val, depth) {
-    if (depth === void 0) { depth = 5; }
-    if (typeof val !== 'object') {
-        return val;
-    }
-    if (val === null) {
-        return null;
-    }
-    var clonedObject = Array.isArray(val) ? [] : {};
-    for (var key in val) {
-        clonedObject[key] = depth <= 1 ? val[key] : exports.clone(val[key], depth - 1);
-    }
-    return clonedObject;
-};
-
-},{}],53:[function(require,module,exports){
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-var MouseHelper = (function () {
-    function MouseHelper(_renderer) {
-        this._renderer = _renderer;
-    }
-    MouseHelper.getCoordsRelativeToElement = function (event, element) {
-        if (event.pageX === null || event.pageX === undefined) {
-            return null;
-        }
-        var originalElement = element;
-        var x = event.pageX;
-        var y = event.pageY;
-        while (element) {
-            x -= element.offsetLeft;
-            y -= element.offsetTop;
-            element = element.offsetParent;
-        }
-        element = originalElement;
-        while (element && element !== element.ownerDocument.body) {
-            x += element.scrollLeft;
-            y += element.scrollTop;
-            element = element.parentElement;
-        }
-        return [x, y];
-    };
-    MouseHelper.prototype.getCoords = function (event, element, charMeasure, lineHeight, colCount, rowCount, isSelection) {
-        if (!charMeasure.width || !charMeasure.height) {
-            return null;
-        }
-        var coords = MouseHelper.getCoordsRelativeToElement(event, element);
-        if (!coords) {
-            return null;
-        }
-        coords[0] = Math.ceil((coords[0] + (isSelection ? this._renderer.dimensions.actualCellWidth / 2 : 0)) / this._renderer.dimensions.actualCellWidth);
-        coords[1] = Math.ceil(coords[1] / this._renderer.dimensions.actualCellHeight);
-        coords[0] = Math.min(Math.max(coords[0], 1), colCount + (isSelection ? 1 : 0));
-        coords[1] = Math.min(Math.max(coords[1], 1), rowCount);
-        return coords;
-    };
-    MouseHelper.prototype.getRawByteCoords = function (event, element, charMeasure, lineHeight, colCount, rowCount) {
-        var coords = this.getCoords(event, element, charMeasure, lineHeight, colCount, rowCount);
-        var x = coords[0];
-        var y = coords[1];
-        x += 32;
-        y += 32;
-        return { x: x, y: y };
-    };
-    return MouseHelper;
-}());
-exports.MouseHelper = MouseHelper;
-
-},{}],54:[function(require,module,exports){
+},{"../common/Lifecycle":20}],62:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var Terminal_1 = require("./public/Terminal");
 module.exports = Terminal_1.Terminal;
 
-},{"./public/Terminal":24}]},{},[54])(54)
+},{"./public/Terminal":28}]},{},[62])(62)
 });
 //# sourceMappingURL=xterm.js.map

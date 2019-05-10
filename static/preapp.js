@@ -11,9 +11,17 @@
     // setTimeout(function() { term.fit() }, 2000);
     // setTimeout(function() {term.setOption('rendererType', 'dom');}, 2100);
 
-    var term = new OriginalTerminal({
-        fontSize: fontSize                               
-    });
+    var termOption = {
+        fontSize: fontSize,
+    };
+    var webgl2Supported = !!document.createElement('canvas').getContext('webgl2');
+    if (webgl2Supported) {
+        termOption.experimentalCharAtlas = 'webgl';
+        termOption.rendererType = 'webgl';
+    }
+
+    var term = new OriginalTerminal(termOption);
+
     window.term = term;
 
     var protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';

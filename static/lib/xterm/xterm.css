@@ -36,7 +36,6 @@
  */
 
 .xterm {
-    font-family: courier-new, courier, monospace;
     font-feature-settings: "liga" 0;
     position: relative;
     user-select: none;
@@ -75,6 +74,14 @@
     white-space: nowrap;
     overflow: hidden;
     resize: none;
+    /*
+     * HACK: this forces the caret to always be at the top-left corner of the
+     * textarea regardless of its contents. We want it there so that the browser
+     * knows where to display emoji and IME inputs. We need it to be at least
+     * -2em because some glyphs (e.g. emoji) take twice the space, even when
+     * using a monospace font.
+     */
+    letter-spacing: -2em;
 }
 
 .xterm .composition-view {
@@ -139,7 +146,7 @@
     cursor: pointer;
 }
 
-.xterm.xterm-cursor-crosshair {
+.xterm.column-select.focus {
     /* Column selection mode */
     cursor: crosshair;
 }
