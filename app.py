@@ -115,7 +115,7 @@ def get_bash_line(bash_pid, rl_line_buffer_addr, rl_point_addr):
     rl_line_buffer_heap_addr = int.from_bytes(data, byteorder='little')
 
     mem_file.seek(rl_line_buffer_heap_addr)
-    data = mem_file.read(128)
+    data = mem_file.read(256)
     line = data[:data.find(b'\x00')].decode('utf-8')
 
     mem_file.seek(rl_point_addr)
@@ -345,6 +345,8 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
 
             ret.sort(key=lambda s: s.lower())
 
+            # TODO: limit ret to return only a few instead of all?
+
             self.write({
                 'data': ret,
                 'line': line,
@@ -356,7 +358,7 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
 
 
 def restart_program():
-	# From https://www.daniweb.com/programming/software-development/code/260268/restart-your-python-program
+    # From https://www.daniweb.com/programming/software-development/code/260268/restart-your-python-program
     """Restarts the current program.
     Note: this function does not return. Any cleanup action (like
     saving data) must be done before calling this function."""

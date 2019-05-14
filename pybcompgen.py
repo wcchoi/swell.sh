@@ -94,6 +94,7 @@ def remove_control_characters(s):
 # so in that case make sure {to_complete} already contains command + ' ' + xxx
 CMD_TMPL = [
     #'cd {cwd}',
+    'PS1=""',
     'void(){{ :; }}',
     'declare -F _command &>/dev/null && complete -F _command void',
     'echo MARKER',

@@ -158,7 +158,14 @@ _getCompletionsAtLoc['bash'] = function(cb) {
                         }
                         if(json2.data.length > 1) {
                             var prefix = sharedStart(json2.data)
-                            prefix = sharedStart([prefix, prevToken])
+                            if (prevToken) {
+                                var prevSlashPos = prevToken.lastIndexOf('/')
+                                if (prevSlashPos > -1) {
+                                    prefix = sharedStart([prefix, prevToken.slice(prevSlashPos+1)])
+                                } else {
+                                    prefix = sharedStart([prefix, prevToken])
+                                }
+                            }
                             var reupdateCompleter = true
                         } else if(json2.data.length === 0) {
                             prefix = ''
