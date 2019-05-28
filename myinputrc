@@ -5,8 +5,7 @@ set output-meta on
 ### Don't suggest hidden files unless the dot(.) is provided
 set match-hidden-files off
 
-### TODO:
-### set completion-ignore-case on
+set completion-ignore-case on
 
 ### Don't show Display all XXX possibilities? (y or n)
 ### OTHERWISE sometimes the command will be executed by pybcompgen, which can be very wrong... (eg: 'rm -rf /' !?)
@@ -15,5 +14,9 @@ set match-hidden-files off
 set completion-query-items 0
 
 set show-all-if-ambiguous on
+
+set completion-display-width 0
+
+# set skip-completed-text on
 
 ### Others?

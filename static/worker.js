@@ -156,15 +156,18 @@ _getCompletionsAtLoc['bash'] = function(cb) {
                         if(prevSpacePos > -1) {
                             var prevToken = json.line.slice(prevSpacePos+1, json.point)
                         }
+
                         if(json2.data.length > 1) {
-                            var prefix = sharedStart(json2.data)
+                            var prefix = sharedStart(json2.data.map(function(s) { return s.toLowerCase() }))
                             if (prevToken) {
                                 var prevSlashPos = prevToken.lastIndexOf('/')
                                 if (prevSlashPos > -1) {
-                                    prefix = sharedStart([prefix, prevToken.slice(prevSlashPos+1)])
+                                    prefix = sharedStart([prefix, prevToken.slice(prevSlashPos+1).toLowerCase()])
                                 } else {
-                                    prefix = sharedStart([prefix, prevToken])
+                                    prefix = sharedStart([prefix, prevToken.toLowerCase()])
                                 }
+                            } else {
+                                prefix = ''
                             }
                             var reupdateCompleter = true
                         } else if(json2.data.length === 0) {
@@ -177,6 +180,7 @@ _getCompletionsAtLoc['bash'] = function(cb) {
                                 prefix = ''
                             }
                         }
+
                         console.log("prefix 2", prefix)
                         var data = {
                             completions: json2.data,

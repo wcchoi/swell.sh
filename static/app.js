@@ -26,13 +26,13 @@ var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceA
         c.innerHTML = ''
         c.innerHTML = s.join('')
         c.scrollLeft = 0
-        var lastInput = ''
+        var lastInput = prefix
         $('.suggestion').on('click', function (evt) {
             var word = evt.currentTarget.dataset.value
             if(lastInput) {
                 Terminal.backspaceNTimes(lastInput.length)
             }
-            lastInput = word.slice(prefix.length, word.length)
+            lastInput = word
             if(addSpaceAtEnd) {
                 lastInput += ' ' // input an extra space at the end
             }
