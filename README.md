@@ -9,6 +9,28 @@ It is useful for quickly troubleshooting server problems on the go, or in your b
     </a>
 </p>
 
+## What is it?
+
+Diagram:
+```
++-------------+             +--------------+           +--------------+
+|             |             |              |           |              |
+|             |  WebSocket  |              |  spawn    | Bash process |
+| Client Side +-------------> Server Side  +---------->+              |
+|             <-------------+              |           |              |
+| Browser     |             | Python       |  pty      |              |
+|             |             |              +----------->              |
+| Chrome /    |             | API & WS     <-----------+              |
+| Safari      |             |              |           |              |
+|             |             | Static File  |  ptrace   |              |
+|             |             |              +----------->              |
+|             |             |              |           |              |
++-------------+             +--------------+           +--------------+
+```
+Swell.sh is a client-server application that 1) spawns a Bash process and 2) opens a HTTP server. It allows users to connect to the server on their mobile browser, then they could interact with the Bash process via the Web terminal UI, kind of similar to using a SSH client App on your phone.
+
+The difference is that the Web-based UI is designed to use on mobile phone and has a virtual keyboard built-into the app that gives features like autocomplete suggestion and swipe gesture (by utilizing information provided by the server process). Think of something like your phone's keyboard trying to suggest the next word you may want to type, but instead of natural language, now it suggests Bash's Tab completion. Take a look at the GIF above to see what it means.
+
 **Table Of Content:**
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
