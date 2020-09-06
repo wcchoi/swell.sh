@@ -468,7 +468,11 @@ if __name__ == '__main__':
     )
     # pprint(bash_info.__dict__)
 
-    executor = concurrent.futures.ProcessPoolExecutor()
+    if "com.termux" in os.environ.get("PREFIX", ""):
+        logger.info("Termux detected, using ThreadPoolExecutor")
+        executor = concurrent.futures.ThreadPoolExecutor()
+    else:
+        executor = concurrent.futures.ProcessPoolExecutor()
 
     handlers = [
         (r"/websocket", MyTermSocket, {'term_manager': term_manager}),
