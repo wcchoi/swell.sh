@@ -1,0 +1,11 @@
+--- tsconfig.all.json	2020-09-06 22:20:56.409673105 +0800
++++ tsconfig.all.json.new	2020-09-06 22:20:51.303667723 +0800
+@@ -13,6 +13,7 @@
+     { "path": "./addons/xterm-addon-serialize/benchmark" },
+     { "path": "./addons/xterm-addon-unicode11/src" },
+     { "path": "./addons/xterm-addon-web-links/src" },
+-    { "path": "./addons/xterm-addon-webgl/src" }
++    { "path": "./addons/xterm-addon-webgl/src" },
++    { "path": "./addons/xterm-addon-terminado/src" }
+   ]
+ }
