@@ -1,24 +1,8 @@
 (function() {
     window.OriginalTerminal = Terminal;
-    terminado.apply(OriginalTerminal);
-    OriginalTerminal.applyAddon(fit);  // Apply the `fit` addon
-
-    var fontSize = localStorage.getItem('terminal-font-size') || 12;
-    fontSize = Number(fontSize)
-    console.log('fontSize:', fontSize)
-
-    // For older version iOS (~Safari 7): uncomment if needed
-    // setTimeout(function() { term.fit() }, 2000);
-    // setTimeout(function() {term.setOption('rendererType', 'dom');}, 2100);
 
     var termOption = {
-        fontSize: fontSize,
     };
-    var webgl2Supported = !!document.createElement('canvas').getContext('webgl2');
-    if (webgl2Supported) {
-        termOption.experimentalCharAtlas = 'webgl';
-        termOption.rendererType = 'webgl';
-    }
 
     var term = new OriginalTerminal(termOption);
 
@@ -27,13 +11,13 @@
     var protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socketURL = protocol + location.hostname + ((location.port) ? (':' + location.port) : '') + "/websocket";
     var sock = new ReconnectingWebSocket(socketURL);
-    // var sock = new WebSocket(socketURL);
+    var terminadoAddon = new TerminadoAddon.TerminadoAddon(sock)
 
     console.log("new sock");
     // term.setOption("fontSize", 12);
     sock.addEventListener('open', function () {
         console.log("sock open");
-        term.terminadoAttach(sock);
+        term.loadAddon(terminadoAddon)
     });
 
     sock.addEventListener('close', function() {
@@ -46,13 +30,23 @@
 
     term.open(document.getElementById('terminal-container'));
 
+    var webgl2Supported = !!document.createElement('canvas').getContext('webgl2');
+    if (webgl2Supported) {
+        var webglAddon = new WebglAddon.WebglAddon()
+        term.loadAddon(webglAddon)
+    }
+
+    var fitAddon = new FitAddon.FitAddon()
+    term.fitAddon = fitAddon
+    term.loadAddon(fitAddon)
+
     var hideOSKeyboard = setInterval(function() {
         if(term.textarea) {
             term.textarea.readOnly = true; // disable built-in keyboard poping up in mobile
             // term.on('blur', function(e) { term.focus(); })
 
             // This is only for Canvas Renderer Type
-            var crl = term._core.renderer._renderLayers.slice(-1)[0] // CursorRenderLayer
+            var crl = term._core._renderService._renderer._renderLayers.slice(-1)[0]
             crl._renderBlurCursor = crl._renderBlockCursor // always show as if focused
 
             clearInterval(hideOSKeyboard)
@@ -62,7 +56,11 @@
             setTimeout(function() {term.focus();}, 50);
             setTimeout(function() {term.blur(); }, 100);
             setTimeout(function() {term.textarea.disabled = true; }, 150);
-            term.fit()
+            term.fitAddon.fit()
+            var fontSize = localStorage.getItem('terminal-font-size') || 12;
+            fontSize = Number(fontSize)
+            console.log('fontSize:', fontSize)
+            Terminal.setFontSize(fontSize);
         }
     }, 100);
 })()

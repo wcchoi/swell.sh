@@ -128,15 +128,18 @@ var autocompletefn = _.debounce(function() {
 }, 300)
 
 var Terminal = (function(term) {
+    var xtermDataHandler = function(s) {
+        term._core._coreService.triggerDataEvent(s, true)
+    }
     var delGroupBefore = function() {
-        term._core.handler('\x17') // CTRL-W
+        xtermDataHandler('\x17') // CTRL-W
         autocompletefn()
     }
     var insertWord = function(word, shouldUpdateCompleter) {
         if(typeof shouldUpdateCompleter === 'undefined') shouldUpdateCompleter = true
         for(var i = 0; i < word.length; i++) {
             var c = word[i]
-            term._core.handler(c[0]);
+            xtermDataHandler(c[0]);
         }
         if(shouldUpdateCompleter) {
             autocompletefn()
@@ -144,14 +147,14 @@ var Terminal = (function(term) {
     }
     var insert = function(c) {
         return function(){
-            term._core.handler(c[0]);
+            xtermDataHandler(c[0]);
             autocompletefn()
         }
     }
     var insertSp = function(which, shouldUpdateCompleter) {
         return function(){
             if(typeof shouldUpdateCompleter === 'undefined') shouldUpdateCompleter = true
-            term._core.handler(String.fromCharCode(which));
+            xtermDataHandler(String.fromCharCode(which));
 
             if(shouldUpdateCompleter) {
                 autocompletefn()
@@ -160,20 +163,20 @@ var Terminal = (function(term) {
     }
     var insertSp2 = function(which) {
         return function(){
-            term._core.handler(String.fromCharCode(0x1b) + which);
+            xtermDataHandler(String.fromCharCode(0x1b) + which);
 
             autocompletefn()
         }
     }
     var insertCtrl = function(c) {
         return function(){
-            term._core.handler(String.fromCharCode(c.charCodeAt(0) - 64))
+            xtermDataHandler(String.fromCharCode(c.charCodeAt(0) - 64))
             autocompletefn()
         }
     }
     var insertAlt = function(c) {
         return function(){
-            term._core.handler(String.fromCharCode(0x1b) + c[0].toLowerCase())
+            xtermDataHandler(String.fromCharCode(0x1b) + c[0].toLowerCase())
             autocompletefn()
         }
     }
@@ -182,7 +185,7 @@ var Terminal = (function(term) {
         var origHeight = termContainer.offsetHeight;
         termContainer.style.height = origHeight + "px";
         term.setOption("fontSize", size)
-        term.fit();
+        term.fitAddon.fit()
         setTimeout(function() {
             term.scrollToBottom();
         }, 0)
@@ -245,7 +248,7 @@ var Terminal = (function(term) {
                 ['<button><b>Confirm</b></button>', function (instance, toast, button, e, inputs) {
                     var text = inputs[0].value;
                     console.log('Text field: ' + text);
-                    term._core.handler(text);
+                    xtermDataHandler(text);
                     instance.hide({ transitionOut: 'fadeOut' }, toast, 'button');
                 }, false], // true to focus
             ]
