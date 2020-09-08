@@ -124,7 +124,7 @@ var addToDictionary = function(word) {
     DICTIONARY[word] = {path: path, pathDistance: pathDistance}
 }
 
-var _getCompletionsAtLoc = {}
+var _getKeySuggestions = {}
 var startsWith = function(s, t) {
     return s.indexOf(t) == 0
 }
@@ -137,7 +137,7 @@ function sharedStart(array){
     return a1.substring(0, i);
 }
 
-_getCompletionsAtLoc['bash'] = function(cb) {
+_getKeySuggestions['bash'] = function(cb) {
     fetch('/line' + '?t=' + String(Date.now()))
         .then(function(resp) {
             return resp.json()
@@ -223,8 +223,8 @@ _getCompletionsAtLoc['bash'] = function(cb) {
         })
 }
 
-var getCompletionsAtLoc = function(cb) {
-    _getCompletionsAtLoc['bash'](cb)
+var getKeySuggestions = function(cb) {
+    _getKeySuggestions['bash'](cb)
 }
 
 var getSearchSpace = function(completions, mode) {
@@ -247,7 +247,7 @@ function getNearestCenter(pt) {
     return _.min(dists, '1')[0]
 }
 
-var getSuggestions = function(inputpath, completions, mode, cb) {
+var gestureRecognize = function(inputpath, completions, mode, cb) {
     var diff = function(g1, g2) {
         if(!g1 || !g2 || g1.length !== g2.length) {
             //error state...
@@ -315,7 +315,7 @@ var getSuggestions = function(inputpath, completions, mode, cb) {
     cb({data: r})
 }
 
-var getCompletions = function(cb) {
+var getSwipeSuggestion = function(cb) {
     //search all the keywords
     //var charsBefore = getCharsBefore(file, loc)
     //var data = {completions: _.filter(dict, function(word){
@@ -343,14 +343,14 @@ var startListening = function() {
             msg.args.push(callback)
         }
         switch(msg.fn) {
-            case "getSuggestions":
-                getSuggestions.apply(self, msg.args)
+            case "gestureRecognize":
+                gestureRecognize.apply(self, msg.args)
                 break
-            case "getCompletionsAtLoc":
-                getCompletionsAtLoc.apply(self, msg.args)
+            case "getKeySuggestions":
+                getKeySuggestions.apply(self, msg.args)
                 break
-            case "getCompletions":
-                getCompletions.apply(self, msg.args)
+            case "getSwipeSuggestion":
+                getSwipeSuggestion.apply(self, msg.args)
                 break
             default:
                 break

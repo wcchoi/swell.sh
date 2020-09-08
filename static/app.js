@@ -92,29 +92,29 @@ var Analyzer = (function() {
         return promise
     }
 
-    var getSuggestions = function(inputpath, completions, mode) {
-        return makeWWPromise({fn: "getSuggestions", args: [inputpath, completions, mode]})
+    var gestureRecognize = function(inputpath, completions, mode) {
+        return makeWWPromise({fn: "gestureRecognize", args: [inputpath, completions, mode]})
     }
 
-    var getCompletions= function() {
-        return makeWWPromise({fn: "getCompletions", args: []})
+    var getSwipeSuggestion = function() {
+        return makeWWPromise({fn: "getSwipeSuggestion", args: []})
     }
 
-    var getCompletionsAtLoc = function() {
-        return makeWWPromise({fn: "getCompletionsAtLoc", args: []})
+    var getKeySuggestions = function() {
+        return makeWWPromise({fn: "getKeySuggestions", args: []})
     }
 
     return {
         initialize: initialize,
-        getSuggestions: getSuggestions,
-        getCompletionsAtLoc: getCompletionsAtLoc,
-        getCompletions: getCompletions,
+        gestureRecognize: gestureRecognize,
+        getKeySuggestions: getKeySuggestions,
+        getSwipeSuggestion: getSwipeSuggestion,
     }
 })()
 Analyzer.initialize()
 
 var autocompletefn = _.debounce(function() {
-    Analyzer.getCompletionsAtLoc()
+    Analyzer.getKeySuggestions()
         .then(function(data) {
             if(data.completions && data.completions.length > 0) {
                 updateCompleter(data.completions.slice(0,10), data.prefix, data.reupdateCompleter, data.addSpaceAtEnd)
@@ -411,9 +411,9 @@ var Keyboard = (function (Terminal, Analyzer) {
             swipePath.addPt({x: currPt.x * _canvas.width, y: currPt.y * _canvas.height})
 
             var inputpath = swipePath.getInputPath()
-            Analyzer.getCompletions()
+            Analyzer.getSwipeSuggestion()
             .then(function(data) {
-                return Analyzer.getSuggestions(inputpath, data.completions, 'bash')
+                return Analyzer.gestureRecognize(inputpath, data.completions, 'bash')
             }).then(function(completions){
                 // console.log(completions)
                 var compl = _.pluck(completions, 'word')
