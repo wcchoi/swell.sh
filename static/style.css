@@ -38,7 +38,8 @@ html, body {
 
 #container {
     position: relative;
-    width:100%;
+    width: 95%;
+    margin: auto;
     /*height: 35vh;*/
     overflow: none;
 }
