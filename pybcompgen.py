@@ -63,6 +63,7 @@ Swell.sh changes:
 2. Use specific input rc file
 3. Some changes to the parsing of bash output to make it work on more cases
 4. Add the void function to prevent accidentally running the command
+5. Case insensitivity
 
 """
 import sys
@@ -113,7 +114,7 @@ CMD_TMPL = '\n'.join(CMD_TMPL)
 
 BASH_PATH = shutil.which('bash')
 
-def complete(to_complete, cwd=None):
+def complete(to_complete, cwd=None, show_all=False):
     """ wow! so this is stupid, but what can you do? to understand
         the command required to get completion information out of bash,
         start by executing "printf '/et\x09\x09' | bash -i".  What this
@@ -155,7 +156,11 @@ def complete(to_complete, cwd=None):
     my_env['HOME'] = os.environ.get('HOME')
     if os.environ.get("LD_LIBRARY_PATH"):
         my_env['LD_LIBRARY_PATH'] = os.environ.get('LD_LIBRARY_PATH')
-    my_env['INPUTRC'] = os.path.join(os.getcwd(), 'myinputrc')
+    if show_all:
+        my_env['INPUTRC'] = os.path.join(os.getcwd(), 'myinputrc_showall')
+    else:
+        my_env['INPUTRC'] = os.path.join(os.getcwd(), 'myinputrc')
+
     # print(my_env)
 
     if not cwd:
@@ -201,6 +206,9 @@ def complete(to_complete, cwd=None):
             else:
                 last_marker = i
 
+    # print('markers:', first_marker, last_marker)
+    # pprint.pprint(lines)
+
     # SPECIAL CASE: pagination
     if last_marker is None:
         # when this happens there are too many options,
@@ -212,6 +220,9 @@ def complete(to_complete, cwd=None):
         # first_marker+=1
 
     complete_lines = lines[first_marker+2:last_marker-1]
+
+    # print("OSCAR DEBUG")
+    # pprint.pprint(complete_lines)
 
     #import bpdb; bpdb.set_trace()
     #SPECIAL-CASE: no completion options or only one option

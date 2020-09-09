@@ -203,8 +203,6 @@ _getKeySuggestions['bash'] = function(cb) {
                     completions = _.filter(reservedWords['bash'], function(word){
                         return startsWith(word, prefix) && word !== prefix
                     })
-                    reupdateCompleter = false
-                    addSpaceAtEnd = false
                 }
                 var data = {
                     completions: completions,
@@ -247,7 +245,7 @@ function getNearestCenter(pt) {
     return _.min(dists, '1')[0]
 }
 
-var gestureRecognize = function(inputpath, completions, mode, cb) {
+var gestureRecognize = function(inputpath, completions, mode, shouldAddToDictionary, cb) {
     var diff = function(g1, g2) {
         if(!g1 || !g2 || g1.length !== g2.length) {
             //error state...
@@ -272,7 +270,9 @@ var gestureRecognize = function(inputpath, completions, mode, cb) {
     // if the whole path length is only a single character
     // output the character instead
 
-    completions.forEach(addToDictionary)
+    if(shouldAddToDictionary) {
+        completions.forEach(addToDictionary)
+    }
 
     var searchSpace = getSearchSpace(completions, mode)
 
@@ -315,21 +315,70 @@ var gestureRecognize = function(inputpath, completions, mode, cb) {
     cb({data: r})
 }
 
-var getSwipeSuggestion = function(cb) {
-    //search all the keywords
-    //var charsBefore = getCharsBefore(file, loc)
-    //var data = {completions: _.filter(dict, function(word){
-        //// return word.startsWith(charsBefore)
-        //return startsWith(word, charsBefore) && word !== charsBefore
-    //}),
-    //start: {line: loc.line, ch: loc.ch - charsBefore.length},
-    //end: loc}
+var getSwipeSuggestions = function(cb) {
+    fetch('/line' + '?t=' + String(Date.now()))
+        .then(function(resp) {
+            return resp.json()
+        })
+        .then(function(json) {
+            // postMessage({debug: 'line return'})
+            if(json.line.indexOf(' ') > -1) {
+                // postMessage({debug: 'b 1'})
+                return fetch('/autocomplete' + '?show_all=true&t=' + String(Date.now()))
+                    .then(function(resp) {
+                        return resp.json()
+                    })
+                    .then(function(json2) {
+                        // look for white space before point
+                        var prevSpacePos = json.line.slice(0, json.point).lastIndexOf(' ')
+                        if(prevSpacePos > -1) {
+                            var prevToken = json.line.slice(prevSpacePos+1, json.point)
+                        }
 
-    cb({
-        data: {
-            completions: reservedWords['bash'],
-        }
-    })
+                        if(json2.data.length > 1) {
+                            var prefix = sharedStart(json2.data.map(function(s) { return s.toLowerCase() }))
+                            if (prevToken) {
+                                var prevSlashPos = prevToken.lastIndexOf('/')
+                                if (prevSlashPos > -1) {
+                                    prefix = sharedStart([prefix, prevToken.slice(prevSlashPos+1).toLowerCase()])
+                                } else {
+                                    prefix = sharedStart([prefix, prevToken.toLowerCase()])
+                                }
+                            } else {
+                                prefix = ''
+                            }
+                            var reupdateCompleter = true
+                        } else if(json2.data.length === 0) {
+                            prefix = ''
+                        } else { // only one
+                            if(prevSpacePos > -1) {
+                                prefix = prevToken
+                                var reupdateCompleter = true
+                            } else {
+                                prefix = ''
+                            }
+                        }
+
+                        console.log("getSwipeSuggestions bash prefix 2:", prefix)
+                        var data = {
+                            completions: json2.data,
+                            shouldAddToDictionary: false,
+                            prefix: prefix,
+                            reupdateCompleter: reupdateCompleter,
+                            addSpaceAtEnd: false,
+                            isSwipe: true,
+                        }
+                        cb({data: data})
+                    })
+            } else {
+                cb({
+                    data: {
+                        completions: reservedWords['bash'],
+                        shouldAddToDictionary: true
+                    }
+                })
+            }
+        })
 }
 
 var startListening = function() {
@@ -349,10 +398,11 @@ var startListening = function() {
             case "getKeySuggestions":
                 getKeySuggestions.apply(self, msg.args)
                 break
-            case "getSwipeSuggestion":
-                getSwipeSuggestion.apply(self, msg.args)
+            case "getSwipeSuggestions":
+                getSwipeSuggestions.apply(self, msg.args)
                 break
             default:
+                console.error("Unknown function:" + msg.fn)
                 break
         }
     }

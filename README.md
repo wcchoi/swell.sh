@@ -52,7 +52,7 @@ The difference is that the Web-based UI is designed to use on mobile phone and h
 1. Open-source & self-hosted
 1. Web-based client, works on Chrome on Android and Safari on iOS
 1. Autocomplete suggestion for commands and path names just like when you type Tab in Bash, works with Bash completion installed on the server (eg: git status, git log)
-1. Swipe gesture input for commands
+1. Swipe gesture input
     - support partial path so that you don't need to swipe the whole gesture for long commands, i.e., swiping 'user' would likely to suggest 'useradd', 'userdel', etc
 1. Works for bash inside Tmux (See `Tmux support setting` below)
 1. Works on Termux on Android (See `Termux support setting` below)

@@ -7,10 +7,11 @@ function isNullOrUndefined(x) {
     return _.isUndefined(x) || _.isNull(x);
 }
 
-var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceAtEnd) {
+var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe) {
     if(!prefix) prefix = ''
     if(isNullOrUndefined(reupdateCompleter)) reupdateCompleter = false
     if(isNullOrUndefined(addSpaceAtEnd)) addSpaceAtEnd = false
+    if(isNullOrUndefined(isSwipe)) isSwipe = false
 
     var c = document.getElementById('completer')
 
@@ -27,6 +28,7 @@ var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceA
         c.innerHTML = s.join('')
         c.scrollLeft = 0
         var lastInput = prefix
+        var firstClick = true
         $('.suggestion').on('click', function (evt) {
             var word = evt.currentTarget.dataset.value
             if(lastInput) {
@@ -36,7 +38,8 @@ var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceA
             if(addSpaceAtEnd) {
                 lastInput += ' ' // input an extra space at the end
             }
-            Terminal.insertWord(lastInput, reupdateCompleter)
+            Terminal.insertWord(lastInput, (firstClick && isSwipe) ? false : reupdateCompleter)
+            if(firstClick) firstClick = false
         })
     })
 }
@@ -92,12 +95,12 @@ var Analyzer = (function() {
         return promise
     }
 
-    var gestureRecognize = function(inputpath, completions, mode) {
-        return makeWWPromise({fn: "gestureRecognize", args: [inputpath, completions, mode]})
+    var gestureRecognize = function(inputpath, completions, mode, shouldAddToDictionary) {
+        return makeWWPromise({fn: "gestureRecognize", args: [inputpath, completions, mode, shouldAddToDictionary]})
     }
 
-    var getSwipeSuggestion = function() {
-        return makeWWPromise({fn: "getSwipeSuggestion", args: []})
+    var getSwipeSuggestions = function() {
+        return makeWWPromise({fn: "getSwipeSuggestions", args: []})
     }
 
     var getKeySuggestions = function() {
@@ -108,7 +111,7 @@ var Analyzer = (function() {
         initialize: initialize,
         gestureRecognize: gestureRecognize,
         getKeySuggestions: getKeySuggestions,
-        getSwipeSuggestion: getSwipeSuggestion,
+        getSwipeSuggestions: getSwipeSuggestions,
     }
 })()
 Analyzer.initialize()
@@ -411,16 +414,19 @@ var Keyboard = (function (Terminal, Analyzer) {
             swipePath.addPt({x: currPt.x * _canvas.width, y: currPt.y * _canvas.height})
 
             var inputpath = swipePath.getInputPath()
-            Analyzer.getSwipeSuggestion()
+            var intermediateData
+            Analyzer.getSwipeSuggestions()
             .then(function(data) {
-                return Analyzer.gestureRecognize(inputpath, data.completions, 'bash')
+                intermediateData = data
+                var shouldAddToDictionary = data.shouldAddToDictionary || true;
+                return Analyzer.gestureRecognize(inputpath, data.completions, 'bash', shouldAddToDictionary)
             }).then(function(completions){
                 // console.log(completions)
                 var compl = _.pluck(completions, 'word')
                 if(compl.length > 0) {
-                    updateCompleter(compl)
+                    updateCompleter(compl, intermediateData.prefix, intermediateData.reupdateCompleter, intermediateData.addSpaceAtEnd, intermediateData.isSwipe)
 
-                    // input the first suggestion
+                    // input the first suggestion, the firstClick flag will prevent reupdateCompleter
                     requestAnimationFrame(function(){
                         $('.suggestion').first().trigger('click')
                     })

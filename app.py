@@ -316,8 +316,8 @@ class GetAllCommandHandler(tornado.web.RequestHandler):
         })
 
 # Declared here because can't pickle lambda
-def get_pybcompgen_complete(line, cwd):
-    return pybcompgen.complete(line, cwd)
+def get_pybcompgen_complete(line, cwd, show_all):
+    return pybcompgen.complete(line, cwd, show_all)
 
 class AutoCompleteHandler(tornado.web.RequestHandler):
     def initialize(self, bash_info, executor):
@@ -340,7 +340,10 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
             # logger.info('cwd: {}, {}'.format(readlink_dir, cwd))
             line = line[:point]
 
-            fut = IOLoop.current().run_in_executor(self.executor, get_pybcompgen_complete, line, cwd)
+            if self.get_query_argument('show_all', None):
+                fut = IOLoop.current().run_in_executor(self.executor, get_pybcompgen_complete, line, cwd, True)
+            else:
+                fut = IOLoop.current().run_in_executor(self.executor, get_pybcompgen_complete, line, cwd, False)
             ret = await fut
 
             ret.sort(key=lambda s: s.lower())
