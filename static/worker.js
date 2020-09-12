@@ -1,10 +1,13 @@
 importScripts("lib/lodash.min.js")
 importScripts("lib/es6-promise.auto.min.js")
 importScripts("lib/fetch.umd.js")
+importScripts("lib/robust-websocket.min.js")
 
 if(!console) {
     var console = {log: function() {}, error: function() {}, table: function() {}}
 }
+
+var APPSTATE = {}
 
 var N = 64  //num of pts in resampled path
 var NBest = 15
@@ -408,6 +411,39 @@ var startListening = function() {
     }
 }
 
+var initializeWs = function(cb) {
+    var protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+    var socketURL = protocol + location.hostname + ((location.port) ? (':' + location.port) : '') + "/process_state";
+    var sock = new RobustWebSocket(socketURL);
+
+    sock.addEventListener('open', function () {
+        console.log("ws sock open");
+    });
+
+    sock.addEventListener('close', function() {
+        console.log("ws sock close, reconnecting");
+    });
+
+    sock.addEventListener('message', function (event) {
+        var data = event.data;
+        var origin = event.origin;
+        var lastEventId = event.lastEventId;
+        // handle message
+
+        console.log('process state ws message', event)
+        var data = JSON.parse(event.data)
+        var newMode = data.mode
+        var newPid = data.pid
+        if(APPSTATE.mode !== newMode || APPSTATE.pid !== newPid) {
+            // notify app.js
+            postMessage({process_state_change: {mode: newMode}})
+        }
+        APPSTATE.mode = newMode
+        APPSTATE.pid = newPid
+    });
+
+    cb()
+}
 
 var initializeBash = function(cb) {
     var st = Date.now()
@@ -427,12 +463,9 @@ var initializeBash = function(cb) {
 }
 
 var initialize = function() {
-    // postMessage({debug: 'initialize'})
-    //var st = Date.now()
-    initializeBash(startListening)
-    // startListening()
-    //console.log(Date.now() - st)
-    // postMessage({debug: Date.now() - st})
+    initializeBash(function() {
+        initializeWs(startListening)
+    })
 }
 
 initialize()

@@ -1,3 +1,7 @@
+window.APPSTATE = {
+    mode: 'bash'
+}
+
 var nullfn = function () {
     console.log("called nullfn")
     return null;
@@ -68,6 +72,10 @@ var Analyzer = (function() {
                 } else if(msg.debug.clearPath) {
                     clearPath()
                 }
+            } else if(msg.process_state_change){
+                console.log('process_state_change', msg.process_state_change)
+                window.APPSTATE.mode = msg.process_state_change.mode
+                autocompletefn()
             } else {
                 if(msg.err) {
                     promiseReject(msg.err)
