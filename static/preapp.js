@@ -10,7 +10,7 @@
 
     var protocol = (location.protocol === 'https:') ? 'wss://' : 'ws://';
     var socketURL = protocol + location.hostname + ((location.port) ? (':' + location.port) : '') + "/websocket";
-    var sock = new ReconnectingWebSocket(socketURL);
+    var sock = new RobustWebSocket(socketURL);
     var terminadoAddon = new TerminadoAddon.TerminadoAddon(sock)
 
     console.log("new sock");
