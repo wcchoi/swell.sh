@@ -1,4 +1,13 @@
-terminado==0.8.1
+ansimarkup==1.4.0
+better-exceptions-fork==0.2.1.post6
+colorama==0.4.3
 loguru==0.2.5
+ptyprocess==0.6.0
 pyelftools==0.25
+Pygments==2.6.1
+ring==0.7.3
+six==1.15.0
 tenacity==5.0.3
+terminado==0.8.1
+tornado==6.0.4
+wirerope==0.3.0

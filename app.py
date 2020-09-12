@@ -21,10 +21,12 @@ import logging
 from loguru import logger
 from elftools.elf.elffile import ELFFile
 import pybcompgen
+import json
 
 from tenacity import retry, stop_after_attempt, wait_random, retry_if_exception_type, before_sleep_log
 from tenacity._utils import get_callback_name
 
+import ring
 
 try:
     libc=ctypes.CDLL("libc.so.6", use_errno=True)
@@ -257,6 +259,8 @@ def get_children_of_pid(pid):
             pass
     return pid_childrens[pid]
 
+NVIM_BIN_PATH = os.path.join(os.getcwd(), 'nvim-linux64/bin/nvim')
+BASH_BIN_PATH = shutil.which('bash')
 class BashInfo:
     def __init__(self, **kwargs):
         self.bash_pid = kwargs['bash_pid']
@@ -288,6 +292,23 @@ class BashInfo:
             rl_point_addr = self.rl_point_addr
 
         return bash_pid, rl_line_buffer_addr, rl_point_addr
+
+    def get_interacting_process_state(self):
+        bash_pid, rl_line_buffer_addr, rl_point_addr = self.get_interacting_bash_state()
+        mode = 'bash'
+        pid = bash_pid
+
+        children_pids = get_children_of_pid(bash_pid)
+        if len(children_pids) == 1:
+            child_pid = children_pids.pop()
+            exe = os.readlink('/proc/%s/exe' % child_pid)
+            if exe != BASH_BIN_PATH:
+                if exe == NVIM_BIN_PATH:
+                    mode = 'vim'
+                    pid = child_pid
+
+        return mode, pid, rl_line_buffer_addr, rl_point_addr
+
 
 class GetBashLineHandler(tornado.web.RequestHandler):
     def initialize(self, bash_info):
@@ -344,11 +365,9 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
                 fut = IOLoop.current().run_in_executor(self.executor, get_pybcompgen_complete, line, cwd, True)
             else:
                 fut = IOLoop.current().run_in_executor(self.executor, get_pybcompgen_complete, line, cwd, False)
-            ret = await fut
+            ret = await asyncio.wait_for(fut, 2.0)
 
             ret.sort(key=lambda s: s.lower())
-
-            # TODO: limit ret to return only a few instead of all?
 
             self.write({
                 'data': ret,
@@ -368,9 +387,53 @@ def restart_program():
     python = sys.executable
     os.execl(python, python, *sys.argv)
 
+class ProcessStateChangeWebSocket(tornado.websocket.WebSocketHandler):
+    _connections = {}
+
+    def check_origin(self, origin):
+        return True
+
+    def open(self):
+        self.connection_id = time.time()
+        self.__class__._connections[self.connection_id] = self
+
+    def on_message(self, message):
+        pass
+
+    @classmethod
+    def broadcast(cls, item):
+        payload = json.dumps(item)
+        for cid, conn in cls._connections.items():
+            conn.write_message(payload)
+
+    def on_close(self):
+        del self.__class__._connections[self.connection_id]
+
+def notify_process_change(bash_info, ioloop):
+    mode, pid, _1, _2 = bash_info.get_interacting_process_state()
+    item = {'pid': pid, 'mode': mode}
+    ioloop.add_callback(ProcessStateChangeWebSocket.broadcast, item)
+
 class MyTermSocket(TermSocket):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def initialize(self, bash_info, **kwargs):
+        self.bash_info = bash_info
+        super().initialize(**kwargs)
+
+    def check_origin(self, origin):
+        return True
+
+    def on_pty_read(self, text):
+        super().on_pty_read(text)
+
+        curr_loop = IOLoop.current()
+        #print('on_pty_read')
+
+        # debounce
+        if hasattr(curr_loop, 'timeout_callback') and curr_loop.timeout_callback:
+            curr_loop.remove_timeout(curr_loop.timeout_callback)
+            curr_loop.timeout_callback = None
+
+        curr_loop.timeout_callback = curr_loop.call_later(0.5, notify_process_change, self.bash_info, curr_loop)
 
     def on_pty_died(self):
         super().on_pty_died()
@@ -478,10 +541,11 @@ if __name__ == '__main__':
         executor = concurrent.futures.ProcessPoolExecutor()
 
     handlers = [
-        (r"/websocket", MyTermSocket, {'term_manager': term_manager}),
+        (r"/websocket", MyTermSocket, {'term_manager': term_manager, 'bash_info': bash_info}),
         (r"/compgen", GetAllCommandHandler),
         (r"/line", GetBashLineHandler, {'bash_info': bash_info}),
         (r"/autocomplete", AutoCompleteHandler, {'bash_info': bash_info, 'executor': executor}),
+        (r"/process_state", ProcessStateChangeWebSocket),
         (r"/()", tornado.web.StaticFileHandler, {'path':'./static/index.html'}),
         (r"/(.*)", tornado.web.StaticFileHandler, {'path':'./static/'}),
     ]
