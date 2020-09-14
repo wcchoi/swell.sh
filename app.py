@@ -154,9 +154,7 @@ def get_bash_line_retry(*args):
 def get_tmux_bash_pid(session):
     # out = subprocess.check_output(['tmux', 'list-panes', '-s', '-t', session, '-F', "#{pane_active} #{pane_pid}"])
     out = subprocess.check_output(['tmux', 'list-window', '-t', session, '-F', "#{window_active} #{pane_pid}"])
-    # print('out', out)
     out2 = [l.split(' ') for l in out.decode().splitlines()]
-    # print('out2', out2)
     for active, pid in out2:
         if active == '1':
             return int(pid)
@@ -234,9 +232,7 @@ def get_relevant_lib_and_offset(pid, symbol_name, is_pie=False):
             if sym:
                 relevant_lib = l
                 relevant_offset = sym
-                # print(l, '----->',  hex(sym))
             else:
-                # print(l, 'not found')
                 pass
         finally:
             f.close()
@@ -245,7 +241,6 @@ def get_relevant_lib_and_offset(pid, symbol_name, is_pie=False):
 def get_children_of_pid(pid):
     pid_childrens = defaultdict(set)
     pids = [int(x) for x in os.listdir('/proc/') if x.isdigit()]
-    # print('a', pids)
     for p in pids:
         try:
             with open('/proc/%s/stat' % p, 'r') as f:
@@ -253,7 +248,6 @@ def get_children_of_pid(pid):
                 rpar = data.rfind(')')
                 dset = data[rpar + 2 : ].split()
                 ppid = int(dset[1])
-                # print("Adding %s to %s's children" % (p, ppid))
                 pid_childrens[ppid].add(p)
         except Exception as e:
             pass
@@ -328,7 +322,6 @@ class GetBashLineHandler(tornado.web.RequestHandler):
             })
         finally:
             ptrace_detach(bash_pid)
-        # self.write("Hello world {} ".format(self.pid))
 
 class GetAllCommandHandler(tornado.web.RequestHandler):
     def get(self):
@@ -426,7 +419,6 @@ class MyTermSocket(TermSocket):
         super().on_pty_read(text)
 
         curr_loop = IOLoop.current()
-        #print('on_pty_read')
 
         # debounce
         if hasattr(curr_loop, 'timeout_callback') and curr_loop.timeout_callback:
@@ -442,7 +434,6 @@ class MyTermSocket(TermSocket):
 
         # get all child pids (by ProcessPoolExecutor)
         children_pids = get_children_of_pid(os.getpid())
-        # print("children_pids", os.getpid(), children_pids)
 
         for pid in children_pids:
             os.kill(pid, signal.SIGTERM)
@@ -506,9 +497,6 @@ if __name__ == '__main__':
         # Or the bash is PIE
         rl_line_buffer_lib, rl_line_buffer_offset = get_relevant_lib_and_offset(bash_pid, 'rl_line_buffer', bash_is_pie)
         rl_point_lib, rl_point_offset = get_relevant_lib_and_offset(bash_pid, 'rl_point', bash_is_pie)
-
-        # print('1', rl_line_buffer_lib, rl_line_buffer_offset)
-        # print('2', rl_point_lib, rl_point_offset)
 
         if rl_line_buffer_lib and rl_point_lib and rl_line_buffer_offset and rl_point_offset:
             rl_line_buffer_addr = get_base_addr_of_loaded_dynamic_lib(bash_pid, rl_line_buffer_lib) + rl_line_buffer_offset
