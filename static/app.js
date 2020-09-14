@@ -11,20 +11,13 @@ function isNullOrUndefined(x) {
     return _.isUndefined(x) || _.isNull(x);
 }
 
-var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe) {
-    if(!prefix) prefix = ''
-    if(isNullOrUndefined(reupdateCompleter)) reupdateCompleter = false
-    if(isNullOrUndefined(addSpaceAtEnd)) addSpaceAtEnd = false
-    if(isNullOrUndefined(isSwipe)) isSwipe = false
-
+var _updateCompleter = {}
+_updateCompleter['bash'] = function(suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe) {
     var c = document.getElementById('completer')
-
     var s = ["<ul class='candidates'>"]
-
     suggestions.forEach(function (sugg) {
-        s.push("<li class='suggestion' data-value='"+ sugg  +"'><strong>" + sugg  + "</strong></li>")
+        s.push("<li class='suggestion' data-value='"+ sugg.word  +"'><strong>" + sugg.word  + "</strong></li>")
     })
-
     s.push("</ul>")
 
     requestAnimationFrame(function(){
@@ -47,6 +40,71 @@ var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceA
         })
     })
 }
+
+_updateCompleter['vim'] = function(suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe) {
+    var c = document.getElementById('completer')
+    var s = ["<ul class='candidates'>"]
+    if(!isSwipe && suggestions.length > 0) {
+        s.push("<li class='suggestion refresh-suggestion'>&circlearrowright;</li>")
+    }
+    suggestions.forEach(function (sugg) {
+        s.push("<li class='suggestion' data-index='"+ sugg.index  +"'><strong>" + sugg.word  + "</strong></li>")
+    })
+    s.push("</ul>")
+    requestAnimationFrame(function(){
+        c.innerHTML = ''
+        c.innerHTML = s.join('')
+        var refreshEl = document.querySelector('.suggestion, .refresh-suggestion')
+        if (refreshEl && !isSwipe) {
+            c.scrollLeft = refreshEl.offsetWidth - 4
+        } else {
+            c.scrollLeft = 0
+        }
+        var firstClick = true
+        $('.refresh-suggestion').on('click', function(evt) {
+            // looks like if too fast, will err
+            Terminal.insertCtrl('X')();
+            setTimeout(Terminal.insertCtrl('F'), 300);
+            setTimeout(autocompletefn, 500);
+        })
+        $('.suggestion:not(.refresh-suggestion)').on('click', function (evt) {
+            var index = evt.currentTarget.dataset.index;
+
+            var body = {index: Number(index)}
+            if(isSwipe) body.dont_finish = true
+
+            fetch('/nvim_select_suggestion', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+            }).then(function(resp) {
+                if(!(firstClick && isSwipe)) {
+                    autocompletefn()
+                }
+                if(firstClick) firstClick = false
+            }).catch(function(err) {
+                console.error("nvim_select_suggestion error:", err);
+            })
+        })
+    })
+}
+
+var updateCompleter = function(suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe) {
+    if(!prefix) prefix = ''
+    if(isNullOrUndefined(reupdateCompleter)) reupdateCompleter = false
+    if(isNullOrUndefined(addSpaceAtEnd)) addSpaceAtEnd = false
+    if(isNullOrUndefined(isSwipe)) isSwipe = false
+
+    if (window.APPSTATE.mode === 'bash') {
+        _updateCompleter['bash'](suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe)
+    } else if (window.APPSTATE.mode === 'vim') {
+        _updateCompleter['vim'](suggestions, prefix, reupdateCompleter, addSpaceAtEnd, isSwipe)
+    }
+}
+
 var showErrorCompleter = function(err) {
     var c = document.getElementById('completer')
     requestAnimationFrame(function(){
@@ -107,8 +165,8 @@ var Analyzer = (function() {
         return makeWWPromise({fn: "gestureRecognize", args: [inputpath, completions, mode, shouldAddToDictionary]})
     }
 
-    var getSwipeSuggestions = function() {
-        return makeWWPromise({fn: "getSwipeSuggestions", args: []})
+    var getSwipeSuggestions = function(inputpath, isUpperCase) {
+        return makeWWPromise({fn: "getSwipeSuggestions", args: [inputpath, isUpperCase]})
     }
 
     var getKeySuggestions = function() {
@@ -128,7 +186,13 @@ var autocompletefn = _.debounce(function() {
     Analyzer.getKeySuggestions()
         .then(function(data) {
             if(data.completions && data.completions.length > 0) {
-                updateCompleter(data.completions.slice(0,10), data.prefix, data.reupdateCompleter, data.addSpaceAtEnd)
+                var compl = data.completions.slice(0,10).map(function(word, index) {
+                    return {
+                        word: word,
+                        index: index
+                    }
+                })
+                updateCompleter(compl, data.prefix, data.reupdateCompleter, data.addSpaceAtEnd)
             } else {
                 updateCompleter([]) //clear it
             }
@@ -423,14 +487,19 @@ var Keyboard = (function (Terminal, Analyzer) {
 
             var inputpath = swipePath.getInputPath()
             var intermediateData
-            Analyzer.getSwipeSuggestions()
+            Analyzer.getSwipeSuggestions(inputpath, Keyboard.isUpperCase())
             .then(function(data) {
                 intermediateData = data
                 var shouldAddToDictionary = data.shouldAddToDictionary || true;
                 return Analyzer.gestureRecognize(inputpath, data.completions, 'bash', shouldAddToDictionary)
             }).then(function(completions){
                 // console.log(completions)
-                var compl = _.pluck(completions, 'word')
+                var compl = _.map(completions, function(c) {
+                    return {
+                        word: c.word,
+                        index: c.originalIndex
+                    }
+                })
                 if(compl.length > 0) {
                     updateCompleter(compl, intermediateData.prefix, intermediateData.reupdateCompleter, intermediateData.addSpaceAtEnd, intermediateData.isSwipe)
 
@@ -1289,6 +1358,10 @@ var Keyboard = (function (Terminal, Analyzer) {
         _currLayout = num
     }
 
+    var isUpperCase = function() {
+        return _currLayout === 1
+    }
+
     // The event object
     var Events = (function() {
         // State Machine Constants
@@ -1452,7 +1525,8 @@ var Keyboard = (function (Terminal, Analyzer) {
 
     return {
         initialize: initialize,
-        resize: resizeEvent
+        resize: resizeEvent,
+        isUpperCase: isUpperCase,
     }
 })(Terminal, Analyzer)
 Keyboard.initialize(document.getElementById('container'))

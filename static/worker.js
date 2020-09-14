@@ -224,8 +224,33 @@ _getKeySuggestions['bash'] = function(cb) {
         })
 }
 
+_getKeySuggestions['vim'] = function(cb) {
+    fetch('/nvim_autocomplete' + '?t=' + String(Date.now()))
+        .then(function(resp) {
+            return resp.json()
+        })
+        .then(function(json) {
+            var reupdateCompleter = true
+            var data = {
+                completions: json.data,
+                reupdateCompleter: reupdateCompleter,
+                addSpaceAtEnd: false,
+                prefix: '',
+            }
+            cb({data: data})
+        })
+        .catch(function(err) {
+            console.error(err)
+            postMessage({err: err.message})
+        })
+}
+
 var getKeySuggestions = function(cb) {
-    _getKeySuggestions['bash'](cb)
+    if(APPSTATE.mode === 'bash') {
+        _getKeySuggestions['bash'](cb)
+    } else if (APPSTATE.mode === 'vim') {
+        _getKeySuggestions['vim'](cb)
+    }
 }
 
 var getSearchSpace = function(completions, mode) {
@@ -279,7 +304,7 @@ var gestureRecognize = function(inputpath, completions, mode, shouldAddToDiction
 
     var searchSpace = getSearchSpace(completions, mode)
 
-    var output = _.map(searchSpace, function(entry){
+    var output = _.map(searchSpace, function(entry, index){
         var scoreFullPath = diff(inputpath, entry.path)
 
         //partial path compare
@@ -308,7 +333,8 @@ var gestureRecognize = function(inputpath, completions, mode, shouldAddToDiction
             path: entry.path,
             score_full: scoreFullPath,
             score_partial: scorePartialPath,
-            portion: portion
+            portion: portion,
+            originalIndex: index
         }
     })
 
@@ -318,7 +344,8 @@ var gestureRecognize = function(inputpath, completions, mode, shouldAddToDiction
     cb({data: r})
 }
 
-var getSwipeSuggestions = function(cb) {
+var _getSwipeSuggestions = {}
+_getSwipeSuggestions['bash'] = function(inputpath, isUpperCase, cb) {
     fetch('/line' + '?t=' + String(Date.now()))
         .then(function(resp) {
             return resp.json()
@@ -382,6 +409,36 @@ var getSwipeSuggestions = function(cb) {
                 })
             }
         })
+}
+_getSwipeSuggestions['vim'] = function(inputpath, isUpperCase, cb) {
+    var firstChar = getNearestCenter(inputpath[0])
+    if(isUpperCase) firstChar = firstChar.toUpperCase()
+    fetch('/nvim_autocomplete' + '?first_char=' + firstChar + '&t=' + String(Date.now()))
+        .then(function(resp) {
+            return resp.json()
+        })
+        .then(function(json) {
+            var reupdateCompleter = true
+            var data = {
+                completions: json.data,
+                reupdateCompleter: reupdateCompleter,
+                addSpaceAtEnd: false,
+                prefix: '',
+                isSwipe: true,
+            }
+            cb({data: data})
+        })
+        .catch(function(err) {
+            console.error(err)
+            postMessage({err: err.message})
+        })
+}
+var getSwipeSuggestions = function(inputpath, isUpperCase, cb) {
+    if(APPSTATE.mode === 'bash') {
+        _getSwipeSuggestions['bash'](inputpath, isUpperCase, cb)
+    } else if (APPSTATE.mode === 'vim') {
+        _getSwipeSuggestions['vim'](inputpath, isUpperCase, cb)
+    }
 }
 
 var startListening = function() {

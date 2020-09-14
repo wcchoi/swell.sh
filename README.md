@@ -75,7 +75,7 @@ Requirements:
 1. bash
     - version tested: 4.2 - 4.4
     - the `bash` that comes with most Linux distros (eg: Ubuntu 16.04/18.04, Debian stretch 9.7, CentOS 7.6, Fedora 29 are tested) should work with Swell.sh, unless you've overridden the system default one with your own compiled version
-1. python 3.5+, virtualenv, pip
+1. python 3.6+, virtualenv, pip
 1. `bash-completion` package - [https://github.com/scop/bash-completion](https://github.com/scop/bash-completion) (optional, but highly recommended, maybe pre-installed on your system but if not, could be easily installed from most distro's package manager)
 1. `ptrace_scope` setting as follow:
 
