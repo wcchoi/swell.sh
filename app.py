@@ -22,11 +22,13 @@ from loguru import logger
 from elftools.elf.elffile import ELFFile
 import pybcompgen
 import json
+from pathlib import Path
 
 from tenacity import retry, stop_after_attempt, wait_random, retry_if_exception_type, before_sleep_log
 from tenacity._utils import get_callback_name
 
 import ring
+import aio_msgpack_rpc
 
 try:
     libc=ctypes.CDLL("libc.so.6", use_errno=True)
@@ -371,6 +373,134 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
             logger.error(e)
             raise tornado.web.HTTPError
 
+def get_nvim_unix_socket_by_pid(nvim_pid):
+    regex = r'socket:\[(\d+)\]'
+    proc_net_unix_lines_split =  [l.split(' ') for l in Path('/proc/net/unix').read_text().splitlines()]
+    for root, dirs, files in os.walk('/proc/' + str(nvim_pid) + '/fd'):
+        for f in files:
+            m = re.match(regex, os.readlink(root + '/' + f))
+            if m:
+                for line in proc_net_unix_lines_split:
+                    if m.group(1) in line:
+                        return line[-1]
+
+    return None
+
+@ring.lru(force_asyncio=True)
+async def _get_nvim_client(nvim_pid):
+    nvim_sock = get_nvim_unix_socket_by_pid(nvim_pid)
+    if nvim_sock:
+        nvim = aio_msgpack_rpc.Client(*await asyncio.open_unix_connection(nvim_sock))
+        await nvim.call(b'nvim_set_option', 'pumheight', 1)
+        return nvim
+    return None
+
+async def get_nvim_client(nvim_pid):
+    ret = await _get_nvim_client(nvim_pid)
+    if ret is None:
+        _get_nvim_client.delete(nvim_pid)
+    return ret
+
+async def nvim_api_get_mode(nvim_pid):
+    nvim = await get_nvim_client(nvim_pid)
+    result = await nvim.call(b'nvim_get_mode')
+    return result
+
+async def nvim_get_complete_info(nvim_pid):
+    nvim = await get_nvim_client(nvim_pid)
+    result = await nvim.call('nvim_call_function', 'complete_info', [])
+    return result
+
+async def nvim_get_curr_line(nvim_pid):
+    nvim = await get_nvim_client(nvim_pid)
+    result = await nvim.call(b'nvim_get_current_line')
+    return result
+
+class NVimAutoCompleteHandler(tornado.web.RequestHandler):
+    def initialize(self, bash_info, ptyproc):
+        self.bash_info = bash_info
+        self.ptyproc = ptyproc
+
+    async def get(self):
+        mode, nvim_pid, _1, _2 = bash_info.get_interacting_process_state()
+
+        if mode != 'vim':
+            self.write({
+                'data': [],
+                'line': '',
+                'point': 0,
+            })
+            return
+
+        try:
+            api_ret = await nvim_api_get_mode(nvim_pid)
+            if api_ret['blocking'] or not ('i' in api_ret['mode']):
+                # TODO: indicate it is not insert mode in client
+                self.write({
+                    'data': [],
+                    'line': '',
+                    'point': 0,
+                })
+                return
+
+            first_char = self.get_query_argument('first_char', None)
+            if not first_char:
+                result = await nvim_get_complete_info(nvim_pid)
+                ret = list(map(lambda i: i['word'], result['items']))
+            else:
+                self.ptyproc.write(first_char)
+                await asyncio.sleep(0.1)
+                result = await nvim_get_complete_info(nvim_pid)
+                ret = list(map(lambda i: i['word'], result['items']))
+
+
+            line = await nvim_get_curr_line(nvim_pid)
+            point = 0
+        except OSError as e:
+            if str(e) == 'EOF':
+                self.write({
+                    'data': [],
+                    'line': '',
+                    'point': 0,
+                })
+            else:
+                raise e
+        except Exception as e:
+            logger.exception(e)
+            raise tornado.web.HTTPError
+        else:
+            self.write({
+                'data': ret,
+                'line': line,
+                'point': point,
+            })
+
+async def nvim_select_popupmenu_item(nvim_pid, index, insert, finish, opts):
+    nvim = await get_nvim_client(nvim_pid)
+    result = await nvim.call('nvim_select_popupmenu_item', index, insert, finish, opts)
+    return result
+
+class NvimSelectSuggestionHandler(tornado.web.RequestHandler):
+    def initialize(self, bash_info):
+        self.bash_info = bash_info
+
+    async def post(self):
+        mode, nvim_pid, _1, _2 = bash_info.get_interacting_process_state()
+        if mode != 'vim':
+            self.write('')
+            return
+        try:
+            self.nvim = await get_nvim_client(nvim_pid)
+            j = json.loads(self.request.body.decode('utf-8'))
+            index = j.get("index")
+
+            insert, finish = True, False if j.get("dont_finish", None) else True
+            opts = {}
+            await nvim_select_popupmenu_item(nvim_pid, index, insert, finish, opts)
+            self.write('')
+        except Exception as e:
+            logger.exception(e)
+            raise tornado.web.HTTPError
 
 def restart_program():
     # From https://www.daniweb.com/programming/software-development/code/260268/restart-your-python-program
@@ -382,6 +512,7 @@ def restart_program():
 
 class ProcessStateChangeWebSocket(tornado.websocket.WebSocketHandler):
     _connections = {}
+    _latest_state = {}
 
     def check_origin(self, origin):
         return True
@@ -389,12 +520,17 @@ class ProcessStateChangeWebSocket(tornado.websocket.WebSocketHandler):
     def open(self):
         self.connection_id = time.time()
         self.__class__._connections[self.connection_id] = self
+        payload = json.dumps(self.__class__._latest_state)
+        self.write_message(payload)
 
     def on_message(self, message):
         pass
 
     @classmethod
     def broadcast(cls, item):
+        cls._latest_state['pid'] = item['pid']
+        cls._latest_state['mode'] = item['mode']
+
         payload = json.dumps(item)
         for cid, conn in cls._connections.items():
             conn.write_message(payload)
@@ -528,12 +664,20 @@ if __name__ == '__main__':
     else:
         executor = concurrent.futures.ProcessPoolExecutor()
 
+    ProcessStateChangeWebSocket._latest_state = {'pid': bash_pid, 'mode': 'bash'}
+
     handlers = [
         (r"/websocket", MyTermSocket, {'term_manager': term_manager, 'bash_info': bash_info}),
+        (r"/process_state", ProcessStateChangeWebSocket),
+        # Bash related
         (r"/compgen", GetAllCommandHandler),
         (r"/line", GetBashLineHandler, {'bash_info': bash_info}),
         (r"/autocomplete", AutoCompleteHandler, {'bash_info': bash_info, 'executor': executor}),
-        (r"/process_state", ProcessStateChangeWebSocket),
+        # NeoVim related
+        (r"/nvim_autocomplete", NVimAutoCompleteHandler,
+             {'bash_info': bash_info, 'ptyproc': term_manager.get_terminal().ptyproc}),
+        (r"/nvim_select_suggestion", NvimSelectSuggestionHandler, {'bash_info': bash_info}),
+        # Static files
         (r"/()", tornado.web.StaticFileHandler, {'path':'./static/index.html'}),
         (r"/(.*)", tornado.web.StaticFileHandler, {'path':'./static/'}),
     ]
