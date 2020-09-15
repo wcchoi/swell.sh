@@ -287,10 +287,10 @@ class BashInfo:
             rl_line_buffer_addr = self.rl_line_buffer_addr
             rl_point_addr = self.rl_point_addr
 
-        return bash_pid, rl_line_buffer_addr, rl_point_addr
+        return bash_pid, detected_tmux, rl_line_buffer_addr, rl_point_addr
 
     def get_interacting_process_state(self):
-        bash_pid, rl_line_buffer_addr, rl_point_addr = self.get_interacting_bash_state()
+        bash_pid, inside_tmux, rl_line_buffer_addr, rl_point_addr = self.get_interacting_bash_state()
         mode = 'bash'
         pid = bash_pid
 
@@ -303,7 +303,7 @@ class BashInfo:
                     mode = 'vim'
                     pid = child_pid
 
-        return mode, pid, rl_line_buffer_addr, rl_point_addr
+        return mode, pid, inside_tmux, rl_line_buffer_addr, rl_point_addr
 
 
 class GetBashLineHandler(tornado.web.RequestHandler):
@@ -312,7 +312,7 @@ class GetBashLineHandler(tornado.web.RequestHandler):
 
     def get(self):
         try:
-            bash_pid, rl_line_buffer_addr, rl_point_addr = self.bash_info.get_interacting_bash_state()
+            bash_pid, _insdie_tmux, rl_line_buffer_addr, rl_point_addr = self.bash_info.get_interacting_bash_state()
             line, point = get_bash_line_retry(bash_pid, rl_line_buffer_addr, rl_point_addr)
         except Exception as e:
             logger.exception(e)
@@ -342,7 +342,7 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
 
     async def get(self):
         try:
-            bash_pid, rl_line_buffer_addr, rl_point_addr = self.bash_info.get_interacting_bash_state()
+            bash_pid, _insdie_tmux, rl_line_buffer_addr, rl_point_addr = self.bash_info.get_interacting_bash_state()
             line, point = get_bash_line_retry(bash_pid, rl_line_buffer_addr, rl_point_addr)
         except Exception as e:
             logger.exception(e)
@@ -422,7 +422,7 @@ class NVimAutoCompleteHandler(tornado.web.RequestHandler):
         self.ptyproc = ptyproc
 
     async def get(self):
-        mode, nvim_pid, _1, _2 = bash_info.get_interacting_process_state()
+        mode, nvim_pid, _1, _2, _3 = bash_info.get_interacting_process_state()
 
         if mode != 'vim':
             self.write({
@@ -485,7 +485,7 @@ class NvimSelectSuggestionHandler(tornado.web.RequestHandler):
         self.bash_info = bash_info
 
     async def post(self):
-        mode, nvim_pid, _1, _2 = bash_info.get_interacting_process_state()
+        mode, nvim_pid, _1, _2, _3 = bash_info.get_interacting_process_state()
         if mode != 'vim':
             self.write('')
             return
@@ -528,8 +528,7 @@ class ProcessStateChangeWebSocket(tornado.websocket.WebSocketHandler):
 
     @classmethod
     def broadcast(cls, item):
-        cls._latest_state['pid'] = item['pid']
-        cls._latest_state['mode'] = item['mode']
+        cls._latest_state = item
 
         payload = json.dumps(item)
         for cid, conn in cls._connections.items():
@@ -539,8 +538,8 @@ class ProcessStateChangeWebSocket(tornado.websocket.WebSocketHandler):
         del self.__class__._connections[self.connection_id]
 
 def notify_process_change(bash_info, ioloop):
-    mode, pid, _1, _2 = bash_info.get_interacting_process_state()
-    item = {'pid': pid, 'mode': mode}
+    mode, pid, inside_tmux, _1, _2 = bash_info.get_interacting_process_state()
+    item = {'pid': pid, 'mode': mode, 'inside_tmux': inside_tmux}
     ioloop.add_callback(ProcessStateChangeWebSocket.broadcast, item)
 
 class MyTermSocket(TermSocket):
@@ -664,7 +663,7 @@ if __name__ == '__main__':
     else:
         executor = concurrent.futures.ProcessPoolExecutor()
 
-    ProcessStateChangeWebSocket._latest_state = {'pid': bash_pid, 'mode': 'bash'}
+    ProcessStateChangeWebSocket._latest_state = {'pid': bash_pid, 'mode': 'bash', 'inside_tmux': False}
 
     handlers = [
         (r"/websocket", MyTermSocket, {'term_manager': term_manager, 'bash_info': bash_info}),

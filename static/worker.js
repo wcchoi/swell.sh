@@ -491,12 +491,14 @@ var initializeWs = function(cb) {
         var data = JSON.parse(event.data)
         var newMode = data.mode
         var newPid = data.pid
+        var insideTmux = data.inside_tmux
         if(APPSTATE.mode !== newMode || APPSTATE.pid !== newPid) {
             // notify app.js
-            postMessage({process_state_change: {mode: newMode}})
+            postMessage({process_state_change: {mode: newMode, insideTmux: insideTmux}})
         }
         APPSTATE.mode = newMode
         APPSTATE.pid = newPid
+        APPSTATE.insideTmux = insideTmux
     });
 
     cb()

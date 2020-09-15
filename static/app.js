@@ -1,5 +1,6 @@
 window.APPSTATE = {
-    mode: 'bash'
+    mode: 'bash',
+    insideTmux: false,
 }
 
 var nullfn = function () {
@@ -133,6 +134,7 @@ var Analyzer = (function() {
             } else if(msg.process_state_change){
                 console.log('process_state_change', msg.process_state_change)
                 window.APPSTATE.mode = msg.process_state_change.mode
+                window.APPSTATE.insideTmux = msg.process_state_change.insideTmux
                 Keyboard.switchMode(window.APPSTATE.mode)
                 autocompletefn()
             } else {
