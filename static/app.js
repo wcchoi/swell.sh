@@ -677,6 +677,24 @@ var Keyboard = (function (Terminal, Analyzer) {
                        swipable, key, 'alt-'+id)
     }
 
+    var modifyKeyLongPress = function(key, enter, move, up) {
+        var newKey = key
+        if (enter) newKey.longpress.onEnter = enter
+        if (move) newKey.longpress.onMove = move
+        if (up) newKey.longpress.onUp = up
+        return newKey
+    }
+
+    var tmuxShortcutFn = function(key) {
+        var tmuxPrefix = 'b'
+        return function() {
+            if (window.APPSTATE.insideTmux) {
+                Terminal.insertCtrl(tmuxPrefix.toUpperCase())();
+                Terminal.insert(key)();
+            }
+        }
+    }
+
     var nothingCnt = 0
     var makeNothingKey = function() {
         nothingCnt++;
@@ -876,7 +894,7 @@ var Keyboard = (function (Terminal, Analyzer) {
                 makeRegularKey('u'),
                 makeRegularKey('i'),
                 makeRegularKey('o'),
-                makeRegularKey('p'),
+                modifyKeyLongPress(makeRegularKey('p'), tmuxShortcutFn('p')),
             ]),
             makeKeyRow(0.05, 3/8, [
                 makeRegularKey('a'),
@@ -896,7 +914,7 @@ var Keyboard = (function (Terminal, Analyzer) {
                 makeRegularKey('c'),
                 makeRegularKey('v'),
                 makeRegularKey('b'),
-                makeRegularKey('n'),
+                modifyKeyLongPress(makeRegularKey('n'), tmuxShortcutFn('n')),
                 makeRegularKey('m'),
                 backspaceKey,
             ]),
@@ -1253,7 +1271,7 @@ var Keyboard = (function (Terminal, Analyzer) {
                 makeRegularKey('u'),
                 makeRegularKey('i'),
                 makeRegularKey('o'),
-                makeRegularKey('p'),
+                modifyKeyLongPress(makeRegularKey('p'), tmuxShortcutFn('p')),
             ]),
             makeKeyRow(0.05, 3/8, [
                 makeRegularKey('a'),
@@ -1273,7 +1291,7 @@ var Keyboard = (function (Terminal, Analyzer) {
                 makeRegularKey('c'),
                 makeRegularKey('v'),
                 makeRegularKey('b'),
-                makeRegularKey('n'),
+                modifyKeyLongPress(makeRegularKey('n'), tmuxShortcutFn('n')),
                 makeRegularKey('m'),
                 backspaceKey,
             ]),
