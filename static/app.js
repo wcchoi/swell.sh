@@ -133,6 +133,7 @@ var Analyzer = (function() {
             } else if(msg.process_state_change){
                 console.log('process_state_change', msg.process_state_change)
                 window.APPSTATE.mode = msg.process_state_change.mode
+                Keyboard.switchMode(window.APPSTATE.mode)
                 autocompletefn()
             } else {
                 if(msg.err) {
@@ -857,8 +858,10 @@ var Keyboard = (function (Terminal, Analyzer) {
 
     /////////
 
+    var _currMode = 'bash'
     var _currLayout = 0
-    var _layoutsConfig = [
+    var _layoutsConfig = {}
+    _layoutsConfig['bash'] = [
         // layout 0
         _.flatten([
             makeKeyRow(0, 1/8, [
@@ -1235,7 +1238,385 @@ var Keyboard = (function (Terminal, Analyzer) {
             ]),
         ]),
     ]
-    var _layoutsSVG = [] //*svg group* for each layout
+    _layoutsConfig['vim'] = [
+        // layout 0
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeRegularKey('q'),
+                makeRegularKey('w'),
+                makeRegularKey('e'),
+                makeRegularKey('r'),
+                makeRegularKey('t'),
+                makeRegularKey('y'),
+                makeRegularKey('u'),
+                makeRegularKey('i'),
+                makeRegularKey('o'),
+                makeRegularKey('p'),
+            ]),
+            makeKeyRow(0.05, 3/8, [
+                makeRegularKey('a'),
+                makeRegularKey('s'),
+                makeRegularKey('d'),
+                makeRegularKey('f'),
+                makeRegularKey('g'),
+                makeRegularKey('h'),
+                makeRegularKey('j'),
+                makeRegularKey('k'),
+                makeRegularKey('l'),
+            ]),
+            makeKeyRow(0, 5/8, [
+                shiftKey,
+                makeRegularKey('z'),
+                makeRegularKey('x'),
+                makeRegularKey('c'),
+                makeRegularKey('v'),
+                makeRegularKey('b'),
+                makeRegularKey('n'),
+                makeRegularKey('m'),
+                backspaceKey,
+            ]),
+            makeKeyRow(0, 7/8, [
+                tosymKey,
+                cursorKey,
+                ctrlKey,
+                spacebarKey,
+                makeRegularNonSwipableKey(',', 'comma'),
+                makeRegularNonSwipableKey('.', 'dot'),
+                newlineKey,
+            ])
+
+        ]),
+        // layout 1 - SHIFT
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeUppercaseKey('Q'),
+                makeUppercaseKey('W'),
+                makeUppercaseKey('E'),
+                makeUppercaseKey('R'),
+                makeUppercaseKey('T'),
+                makeUppercaseKey('Y'),
+                makeUppercaseKey('U'),
+                makeUppercaseKey('I'),
+                makeUppercaseKey('O'),
+                makeUppercaseKey('P'),
+            ]),
+            makeKeyRow(0.05, 3/8, [
+                makeUppercaseKey('A'),
+                makeUppercaseKey('S'),
+                makeUppercaseKey('D'),
+                makeUppercaseKey('F'),
+                makeUppercaseKey('G'),
+                makeUppercaseKey('H'),
+                makeUppercaseKey('J'),
+                makeUppercaseKey('K'),
+                makeUppercaseKey('L'),
+            ]),
+            makeKeyRow(0, 5/8, [
+                unshiftKey,
+                makeUppercaseKey('Z'),
+                makeUppercaseKey('X'),
+                makeUppercaseKey('C'),
+                makeUppercaseKey('V'),
+                makeUppercaseKey('B'),
+                makeUppercaseKey('N'),
+                makeUppercaseKey('M'),
+                backspaceKey,
+            ]),
+            makeKeyRow(0, 7/8, [
+                tosymKey,
+                cursorKey,
+                altKey,
+                spacebarKey,
+                makeRegularNonSwipableKey('-', 'dash'),
+                makeRegularNonSwipableKey('.', 'dot'),
+                newlineKey,
+            ]),
+        ]),
+        // layout 2 - NUMBERS & SYMBOLS
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeRegularNonSwipableKey('1', 'num1'),
+                makeRegularNonSwipableKey('2', 'num2'),
+                makeRegularNonSwipableKey('3', 'num3'),
+                makeRegularNonSwipableKey('4', 'num4'),
+                makeRegularNonSwipableKey('5', 'num5'),
+                makeRegularNonSwipableKey('6', 'num6'),
+                makeRegularNonSwipableKey('7', 'num7'),
+                makeRegularNonSwipableKey('8', 'num8'),
+                makeRegularNonSwipableKey('9', 'num9'),
+                makeRegularNonSwipableKey('0', 'num0'),
+            ]),
+            makeKeyRow(0, 3/8, [
+                makeRegularNonSwipableKey('^', 'caret'),
+                makeRegularNonSwipableKey('$', 'dollar'),
+                makeRegularNonSwipableKey('*', 'asterisk'),
+                makeRegularNonSwipableKey('+', 'plus'),
+                makeRegularNonSwipableKey('?', 'question'),
+                makeRegularNonSwipableKey('~', 'tilde'),
+                makeRegularNonSwipableKey('_', 'underscore'),
+                makeRegularNonSwipableKey('&', 'ampersand'),
+                makeRegularNonSwipableKey('@', 'at'),
+                makeRegularNonSwipableKey(':', 'colon'),
+            ]),
+            makeKeyRow(0, 5/8, [
+                nextsymKey,
+                makeRegularNonSwipableKey('\'', 'quote'),
+                makeRegularNonSwipableKey('"', 'doublequote'),
+                makeRegularNonSwipableKey('<', 'langlebracket'),
+                makeRegularNonSwipableKey('>', 'ranglebracket'),
+                makeRegularNonSwipableKey('|', 'pipe'),
+                makeRegularNonSwipableKey('`', 'backquote'),
+                makeRegularNonSwipableKey(',', 'comma'),
+                backspaceKey,
+            ]),
+
+            makeKeyRow(0, 7/8, [
+                abcKey,
+                escapeKey,
+                altsym1Key,
+                spacebarKey,
+                makeRegularNonSwipableKey('=', 'equal'),
+                makeRegularNonSwipableKey('/', 'slash'),
+                newlineKey,
+            ]),
+        ]),
+        // layout 3 - Other Symbols
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeRegularNonSwipableKey('1', 'num1'),
+                makeRegularNonSwipableKey('2', 'num2'),
+                makeRegularNonSwipableKey('3', 'num3'),
+                makeRegularNonSwipableKey('4', 'num4'),
+                makeRegularNonSwipableKey('5', 'num5'),
+                makeRegularNonSwipableKey('6', 'num6'),
+                makeRegularNonSwipableKey('7', 'num7'),
+                makeRegularNonSwipableKey('8', 'num8'),
+                makeRegularNonSwipableKey('9', 'num9'),
+                makeRegularNonSwipableKey('0', 'num0'),
+            ]),
+            makeKeyRow(0, 3/8, [
+                makeRegularNonSwipableKey('%', 'percent'),
+                makeRegularNonSwipableKey('!', 'exclaimation'),
+                makeRegularNonSwipableKey('#', 'pound'),
+                makeRegularNonSwipableKey('\\', 'backslash'),
+                makeRegularNonSwipableKey(';', 'semicolon'),
+                setfontsizeKey,
+                pasteKey,
+                makeNothingKey(),
+                makeNothingKey(),
+                makeNothingKey(),
+            ]),
+            makeKeyRow(0, 5/8, [
+                prevsymKey,
+                makeRegularNonSwipableKey('(', 'lparen'),
+                makeRegularNonSwipableKey(')', 'rparen'),
+                makeRegularNonSwipableKey('[', 'lbracket'),
+                makeRegularNonSwipableKey(']', 'rbracket'),
+                makeRegularNonSwipableKey('{', 'lbrace'),
+                makeRegularNonSwipableKey('}', 'rbrace'),
+                inputtextKey,
+                backspaceKey,
+            ]),
+            makeKeyRow(0, 7/8, [
+                abcKey,
+                delKey,
+                altsym2Key,
+                spacebarKey,
+                makeNothingKey(),
+                makeNothingKey(),
+                newlineKey,
+            ]),
+        ]),
+        // layout 4 - Ctrl
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeCtrlKey('q'),
+                makeCtrlKey('w'),
+                makeCtrlKey('e'),
+                makeCtrlKey('r'),
+                makeCtrlKey('t'),
+                makeCtrlKey('y'),
+                makeCtrlKey('u'),
+                makeCtrlKey('i'),
+                makeCtrlKey('o'),
+                makeCtrlKey('p'),
+            ]),
+            makeKeyRow(0.05, 3/8, [
+                makeCtrlKey('a'),
+                makeCtrlKey('s'),
+                makeCtrlKey('d'),
+                makeCtrlKey('f'),
+                makeCtrlKey('g'),
+                makeCtrlKey('h'),
+                makeCtrlKey('j'),
+                makeCtrlKey('k'),
+                makeCtrlKey('l'),
+            ]),
+            makeKeyRow(0, 5/8, [
+                shiftKey,
+                makeCtrlKey('z'),
+                makeCtrlKey('x'),
+                makeCtrlKey('c'),
+                makeCtrlKey('v'),
+                makeCtrlKey('b'),
+                makeCtrlKey('n'),
+                makeCtrlKey('m'),
+                backspaceKey,
+            ]),
+            makeKeyRow(0, 7/8, [
+                tosymKey,
+                cursorKey,
+                unctrlKey,
+                spacebarKey,
+                makeRegularNonSwipableKey('-', 'dash'),
+                makeRegularNonSwipableKey('.', 'dot'),
+                newlineKey,
+            ]),
+        ]),
+        // layout 5 - ALT Letter
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeAltKey('Q'),
+                makeAltKey('W'),
+                makeAltKey('E'),
+                makeAltKey('R'),
+                makeAltKey('T'),
+                makeAltKey('Y'),
+                makeAltKey('U'),
+                makeAltKey('I'),
+                makeAltKey('O'),
+                makeAltKey('P'),
+            ]),
+            makeKeyRow(0.05, 3/8, [
+                makeAltKey('A'),
+                makeAltKey('S'),
+                makeAltKey('D'),
+                makeAltKey('F'),
+                makeAltKey('G'),
+                makeAltKey('H'),
+                makeAltKey('J'),
+                makeAltKey('K'),
+                makeAltKey('L'),
+            ]),
+            makeKeyRow(0, 5/8, [
+                shiftKey,
+                makeAltKey('Z'),
+                makeAltKey('X'),
+                makeAltKey('C'),
+                makeAltKey('V'),
+                makeAltKey('B'),
+                makeAltKey('N'),
+                makeAltKey('M'),
+                backspaceKey,
+            ]),
+            makeKeyRow(0, 7/8, [
+                tosymKey,
+                cursorKey,
+                unaltKey,
+                spacebarKey,
+                makeAltKey('-', 'dash'),
+                makeAltKey('.', 'dot'),
+                newlineKey,
+            ]),
+        ]),
+        // layout 6 - ALT + NUMBERS & SYMBOLS
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeAltKey('1', 'num1'),
+                makeAltKey('2', 'num2'),
+                makeAltKey('3', 'num3'),
+                makeAltKey('4', 'num4'),
+                makeAltKey('5', 'num5'),
+                makeAltKey('6', 'num6'),
+                makeAltKey('7', 'num7'),
+                makeAltKey('8', 'num8'),
+                makeAltKey('9', 'num9'),
+                makeAltKey('0', 'num0'),
+            ]),
+            makeKeyRow(0, 3/8, [
+                makeAltKey('^', 'caret'),
+                makeAltKey('$', 'dollar'),
+                makeAltKey('*', 'asterisk'),
+                makeAltKey('+', 'plus'),
+                makeAltKey('?', 'question'),
+                makeAltKey('~', 'tilde'),
+                makeAltKey('_', 'underscore'),
+                makeAltKey('&', 'ampersand'),
+                makeAltKey('@', 'at'),
+                makeAltKey(':', 'colon'),
+            ]),
+            makeKeyRow(0, 5/8, [
+                altnextsymKey,
+                makeAltKey('\'', 'quote'),
+                makeAltKey('"', 'doublequote'),
+                makeAltKey('<', 'langlebracket'),
+                makeAltKey('>', 'ranglebracket'),
+                makeAltKey('|', 'pipe'),
+                makeAltKey('`', 'backquote'),
+                makeAltKey(',', 'comma'),
+                backspaceKey,
+            ]),
+
+            makeKeyRow(0, 7/8, [
+                abcKey,
+                escapeKey,
+                unaltKey,
+                spacebarKey,
+                makeAltKey('=', 'equal'),
+                makeAltKey('/', 'slash'),
+                newlineKey,
+            ]),
+        ]),
+        // layout 7 - ALT + Other Symbols
+        _.flatten([
+            makeKeyRow(0, 1/8, [
+                makeAltKey('1', 'num1'),
+                makeAltKey('2', 'num2'),
+                makeAltKey('3', 'num3'),
+                makeAltKey('4', 'num4'),
+                makeAltKey('5', 'num5'),
+                makeAltKey('6', 'num6'),
+                makeAltKey('7', 'num7'),
+                makeAltKey('8', 'num8'),
+                makeAltKey('9', 'num9'),
+                makeAltKey('0', 'num0'),
+            ]),
+            makeKeyRow(0, 3/8, [
+                makeAltKey('%', 'percent'),
+                makeAltKey('!', 'exclaimation'),
+                makeAltKey('#', 'pound'),
+                makeAltKey('\\', 'backslash'),
+                makeAltKey(';', 'semicolon'),
+                setfontsizeKey,
+                makeNothingKey(),
+                makeNothingKey(),
+                makeNothingKey(),
+                makeNothingKey(),
+            ]),
+            makeKeyRow(0, 5/8, [
+                altprevsymKey,
+                makeAltKey('(', 'lparen'),
+                makeAltKey(')', 'rparen'),
+                makeAltKey('[', 'lbracket'),
+                makeAltKey(']', 'rbracket'),
+                makeAltKey('{', 'lbrace'),
+                makeAltKey('}', 'rbrace'),
+                inputtextKey,
+                backspaceKey,
+            ]),
+            makeKeyRow(0, 7/8, [
+                abcKey,
+                delKey,
+                unaltKey,
+                spacebarKey,
+                makeNothingKey(),
+                makeNothingKey(),
+                newlineKey,
+            ]),
+        ]),
+    ]
+    var _layoutsSVG = {} //*svg group* for each layout
+    Object.keys(_layoutsConfig).forEach(function(mode) { _layoutsSVG[mode] = [] })
     var _width = 600 //of svg doc
     var _height = 240 //of svg doc
     var _keyboardSVG //the outermost svg doc
@@ -1275,8 +1656,8 @@ var Keyboard = (function (Terminal, Analyzer) {
     }
 
     var getKeyUnderPoint = function (pt) {
-        for(var i = 0; i < _layoutsConfig[_currLayout].length; i++) {
-            var key = _layoutsConfig[_currLayout][i]
+        for(var i = 0; i < _layoutsConfig[_currMode][_currLayout].length; i++) {
+            var key = _layoutsConfig[_currMode][_currLayout][i]
             if(isPtWithinKey(pt, key)) {
                 return key
             }
@@ -1290,10 +1671,10 @@ var Keyboard = (function (Terminal, Analyzer) {
         var kbdh = _height
         var layout = _keyboardSVG.group()
         layout.attr('id','layout-'+String(ith))
-        _layoutsSVG[ith] = layout
+        _layoutsSVG[_currMode][ith] = layout
 
-        for(var i = 0; i < _layoutsConfig[ith].length; i++) {
-            var key = _layoutsConfig[ith][i]
+        for(var i = 0; i < _layoutsConfig[_currMode][ith].length; i++) {
+            var key = _layoutsConfig[_currMode][ith][i]
             var keyrect = layout
                             .rect(kbdw*key.w, kbdh*key.h)
                             .fill({ color: '#f0f0f0' })
@@ -1314,47 +1695,32 @@ var Keyboard = (function (Terminal, Analyzer) {
         layout.hide() //initially all layouts are hidden
     }
 
-    var initLayouts = function() {
-        var kbdw = _width
-        var kbdh = _height
-        for(var cnt = 0; cnt < _layoutsConfig.length; cnt++) {
-            var layout = _keyboardSVG.group()
-            layout.attr('id','layout-'+String(cnt))
-            _layoutsSVG.push(layout)
-
-            for(var i = 0; i < _layoutsConfig[cnt].length; i++) {
-                var key = _layoutsConfig[cnt][i]
-                var keyrect = layout
-                                .rect(kbdw*key.w, kbdh*key.h)
-                                .fill({ color: '#f0f0f0' })
-                                .stroke({width: 2, color: '#ffffff'})
-                                .center(key.cx*kbdw, key.cy*kbdh)
-
-                var fontSize = key.fontSize || '2rem'
-
-                var keytext = layout
-                                .text(key.keytext)
-                                .font({ size: fontSize, family: 'Helvetica' })
-                                .center(key.cx*kbdw, key.cy*kbdh)
-
-                var keygroup = layout.group().add(keyrect).add(keytext)
-                keygroup.attr('id',key.keyid+'-key')
-            }
-
-            layout.hide() //initially all layouts are hidden
-        }
-    }
-
     var switchLayout = function(num) {
-        if(_layoutsSVG[_currLayout]) {
-            _layoutsSVG[_currLayout].hide()
+        if(_layoutsSVG[_currMode][_currLayout]) {
+            _layoutsSVG[_currMode][_currLayout].hide()
         }
 
-        if(!_layoutsSVG[num]) {
+        if(!_layoutsSVG[_currMode][num]) {
             initLayout(num)
         }
 
-        _layoutsSVG[num].show()
+        _layoutsSVG[_currMode][num].show()
+        _currLayout = num
+    }
+
+    var switchMode = function(mode) {
+        if(!mode in _layoutsSVG) return
+        if(_layoutsSVG[_currMode][_currLayout]) {
+            _layoutsSVG[_currMode][_currLayout].hide()
+        }
+
+        _currMode = mode
+        var num = 0
+        if(!_layoutsSVG[_currMode][num]) {
+            initLayout(num)
+        }
+
+        _layoutsSVG[_currMode][num].show()
         _currLayout = num
     }
 
@@ -1413,7 +1779,7 @@ var Keyboard = (function (Terminal, Analyzer) {
             ptrId = evt.pointerId
 
             // highlight the key
-            currHighlight = _layoutsSVG[_currLayout].node.querySelector('#'+downState.key.keyid+'-key rect')
+            currHighlight = _layoutsSVG[_currMode][_currLayout].node.querySelector('#'+downState.key.keyid+'-key rect')
 
             currHighlight.style.fill = '#cccccc'
 
@@ -1504,8 +1870,6 @@ var Keyboard = (function (Terminal, Analyzer) {
         _div = container.querySelector('div')
         _keyboardSVG = SVG(_div).attr('viewBox', '0 0 ' + String(_width) + ' ' + String(_height))
 
-        // initLayouts()
-
         // to prevent the unnecessary scrollbar appearing on IE
         // whenever there are <text> with center greater than
         // some weird threshold
@@ -1527,6 +1891,7 @@ var Keyboard = (function (Terminal, Analyzer) {
         initialize: initialize,
         resize: resizeEvent,
         isUpperCase: isUpperCase,
+        switchMode: switchMode,
     }
 })(Terminal, Analyzer)
 Keyboard.initialize(document.getElementById('container'))
