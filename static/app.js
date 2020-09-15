@@ -862,12 +862,12 @@ var Keyboard = (function (Terminal, Analyzer) {
             if (clipboard == undefined) {
                 console.log('clipboard is undefined');
                 iziToast.show({
-                    message: 'Clipboard not supported',
+                    message: 'Clipboard not supported (Chrome & https/localhost only)',
                     position: 'topRight',
                 })
             } else {
                 clipboard.readText().then(function(text) {
-                    xtermDataHandler(text);
+                    Terminal.insertWord(text, true);
                 })
             }
 
