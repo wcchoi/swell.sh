@@ -796,7 +796,7 @@ var Keyboard = (function (Terminal, Analyzer) {
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn },
         longpress: {onEnter: nullfn, onMove: nullfn, onUp: nullfn } }
 
-    var setfontsizeKey = {keyid: 'set-font-size', keytext: '🗚', w: 0.1, h: 0.25,
+    var setfontsizeKey = {keyid: 'set-font-size', keytext: 'T+', w: 0.1, h: 0.25,
         click: function() { Terminal.configFontSize(); },
         timeout: 400 /*ms*/,
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn },
