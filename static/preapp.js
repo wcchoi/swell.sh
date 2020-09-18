@@ -39,6 +39,9 @@
     var fitAddon = new FitAddon.FitAddon()
     term.fitAddon = fitAddon
     term.loadAddon(fitAddon)
+    var serializeAddon = new SerializeAddon.SerializeAddon();
+    term.loadAddon(serializeAddon);
+    term.serializeAddon = serializeAddon
 
     var hideOSKeyboard = setInterval(function() {
         if(term.textarea) {
