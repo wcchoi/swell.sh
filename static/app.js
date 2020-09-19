@@ -1936,6 +1936,7 @@ function copyTextToClipboard(text) {
     textArea.style.position = "fixed";
 
     document.body.appendChild(textArea);
+    // FIXME: the following sometimes cause OS keyboard pop up and make screen flash
     textArea.focus();
     textArea.select();
 
@@ -1950,4 +1951,9 @@ function copyTextToClipboard(text) {
 }
 
 // Copy selection to clipboard automatically
-term.onSelectionChange(function(ev) { copyTextToClipboard(term.getSelection()) })
+term.onSelectionChange(function(ev) {
+    var sel = term.getSelection()
+    if(sel.length > 0) {
+        copyTextToClipboard(sel)
+    }
+})
