@@ -1744,7 +1744,7 @@ var Keyboard = (function (Terminal, Analyzer) {
         }
 
         _currMode = mode
-        var num = 0
+        var num = _currLayout
         if(!_layoutsSVG[_currMode][num]) {
             initLayout(num)
         }
