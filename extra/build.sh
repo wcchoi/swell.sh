@@ -15,7 +15,9 @@ cd ../xterm-addon-webgl/
 npm run package # Build addons/xterm-addon-webgl.js
 cd ../xterm-addon-terminado/
 npm run package # Build addons/xterm-addon-terminado.js
+cd ../xterm-addon-serialize/
+npm run package # Build addons/xterm-addon-serialize.js
 cd ../../
 mkdir -p ../../static/lib/xterm/addons
 cp css/xterm.css lib/xterm.js ../../static/lib/xterm
-cp addons/xterm-addon-{fit,webgl,terminado}/lib/*.js ../../static/lib/xterm/addons
+cp addons/xterm-addon-{fit,webgl,terminado.serialize}/lib/*.js ../../static/lib/xterm/addons
