@@ -203,7 +203,7 @@ var autocompletefn = _.debounce(function() {
             console.log('autocompletefn err:', err)
             showErrorCompleter("Can't fetch from server, please try again...");
         })
-}, 300)
+}, 150)
 
 var Terminal = (function(term) {
     var xtermDataHandler = function(s) {
@@ -270,7 +270,7 @@ var Terminal = (function(term) {
     }
     var configFontSize = function() {
         function genSelect() {
-            var fontSize = localStorage.getItem('terminal-font-size') || 12;
+            var fontSize = localStorage.getItem('terminal-font-size') || window.DEFAULT_FONT_SIZE;
             fontSize = Number(fontSize)
             return '<select>' +
                         '<option value="12"' + (fontSize === 12 ? 'selected' : '')  + '>12</option>' +
@@ -278,6 +278,7 @@ var Terminal = (function(term) {
                         '<option value="16"' + (fontSize === 16 ? 'selected' : '')  + '>16</option>' +
                         '<option value="18"' + (fontSize === 18 ? 'selected' : '')  + '>18</option>' +
                         '<option value="20"' + (fontSize === 20 ? 'selected' : '')  + '>20</option>' +
+                        '<option value="22"' + (fontSize === 22 ? 'selected' : '')  + '>22</option>' +
                     '</select>'
         }
         iziToast.info({
@@ -736,7 +737,7 @@ var Keyboard = (function (Terminal, Analyzer) {
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: Terminal.delGroupBefore},
         longpress: {onEnter: RepeatBackspaceAction.start, onMove: RepeatBackspaceAction.move, onUp: RepeatBackspaceAction.up } }
 
-    var tosymKey = {keyid: 'tosym', keytext: '&123', w: 0.15, h: 0.25,
+    var tosymKey = {keyid: 'tosym', keytext: '&123', w: 0.15, h: 0.25, fontSize: '1.5rem',
         click: function() { switchLayout(2) },
         timeout: 99999,
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn},
@@ -826,13 +827,13 @@ var Keyboard = (function (Terminal, Analyzer) {
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn },
         longpress: {onEnter: nullfn, onMove: nullfn, onUp: nullfn } }
 
-    var unctrlKey = {keyid: 'unctrl', keytext: 'CTRL', w:0.1, h: 0.25, fontSize: '1.5rem',
+    var unctrlKey = {keyid: 'unctrl', keytext: 'CTRL', w:0.1, h: 0.25, fontSize: '1.1rem',
         click: function() { switchLayout(0) },
         timeout: 400 /*ms*/,
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn },
         longpress: {onEnter: nullfn, onMove: nullfn, onUp: nullfn } }
 
-    var unaltKey = {keyid: 'unalt', keytext: 'ALT', w:0.1, h: 0.25, fontSize: '1.5rem',
+    var unaltKey = {keyid: 'unalt', keytext: 'ALT', w:0.1, h: 0.25, fontSize: '1.1rem',
         click: function() { switchLayout(0) },
         timeout: 400 /*ms*/,
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn },
@@ -1647,8 +1648,8 @@ var Keyboard = (function (Terminal, Analyzer) {
     ]
     var _layoutsSVG = {} //*svg group* for each layout
     Object.keys(_layoutsConfig).forEach(function(mode) { _layoutsSVG[mode] = [] })
-    var _width = 600 //of svg doc
-    var _height = 240 //of svg doc
+    var _width = $('#container').width() //of svg doc
+    var _height = $('#container').height() //of svg doc
     var _keyboardSVG //the outermost svg doc
     var _canvas
     var _ctx
@@ -1711,7 +1712,7 @@ var Keyboard = (function (Terminal, Analyzer) {
                             .stroke({width: 2, color: '#ffffff'})
                             .center(key.cx*kbdw, key.cy*kbdh)
 
-            var fontSize = key.fontSize || '2rem'
+            var fontSize = key.fontSize || '1.7rem'
 
             var keytext = layout
                             .text(key.keytext)
@@ -1898,13 +1899,15 @@ var Keyboard = (function (Terminal, Analyzer) {
 
     var initialize = function(container) {
         _div = container.querySelector('div')
-        _keyboardSVG = SVG(_div).attr('viewBox', '0 0 ' + String(_width) + ' ' + String(_height))
+        _keyboardSVG = SVG(_div).attr('viewBox', '0 0 ' + String(_width) + ' ' + String(_height)).attr('preserveAspectRatio', 'none')
 
         // to prevent the unnecessary scrollbar appearing on IE
         // whenever there are <text> with center greater than
         // some weird threshold
         // see http://stackoverflow.com/questions/16093240/ie10-on-windows-7-svg-scrolling-too-far-when-inside-a-div
         _keyboardSVG.style('overflow:hidden')
+        _keyboardSVG.style('width:100%')
+        _keyboardSVG.style('height:100%')
 
         _canvas = container.querySelector('canvas')
         _ctx = _canvas.getContext('2d')

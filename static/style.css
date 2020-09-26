@@ -40,15 +40,13 @@ html, body {
     position: relative;
     width: 95%;
     margin: auto;
-    /*height: 35vh;*/
+    height: 30vh;
     overflow: none;
 }
 
 #kbd {
     width: 100%;
-    height: 0;
-    padding-top: 40%;
-    position: relative;
+    height: 100%;
 }
 
 #kbd svg {
@@ -70,8 +68,6 @@ html, body {
 }
 
 #completerWrap {
-    /*overflow: hidden;*/
-    /*background-color: #ECFFF9;*/
 
 }
 #completer {
@@ -82,15 +78,6 @@ html, body {
     /*overflow-x: scroll;*/
     overflow: auto;
 
-    /*
-    margin-bottom: -1em;
-    padding-bottom: 1em;
-    */
-
-/*  margin-right: -20px;
-    padding-right: 20px;
- */
-
     touch-action: pan-x;
     background-image: linear-gradient(#d2d0d0c2, #fffffffc);
     overflow-y: hidden;
@@ -99,30 +86,28 @@ html, body {
 
 #completer .completerError {
     color: gray;
-    margin-left: calc(0.75em + 15px);
+    margin-left: calc(0.5em + 10px);
     font-family: monospace;
     font-size: 80%;
 }
 
 ul.candidates {
     padding: 0px;
-    /*margin: 0.2rem 0;*/
     margin: 0;
-    /* margin-left: 30px; */
 }
 
 li.suggestion {
     display: inline-block;
     list-style-type: none;
     min-width: 2em;
-    padding-right: 0.75em;
-    padding-left: 0.75em;
+    padding-right: 0.5em;
+    padding-left: 0.5em;
     border-right: 1px dotted #aaa;
     text-align: center;
 }
 
 li.suggestion:first-child {
-    padding-left: calc(0.75em + 15px);
+    padding-left: calc(0.5em + 10px);
 }
 
 

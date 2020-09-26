@@ -60,7 +60,7 @@
             setTimeout(function() {term.blur(); }, 100);
             setTimeout(function() {term.textarea.disabled = true; }, 150);
             term.fitAddon.fit()
-            var fontSize = localStorage.getItem('terminal-font-size') || 12;
+            var fontSize = localStorage.getItem('terminal-font-size') || window.DEFAULT_FONT_SIZE
             fontSize = Number(fontSize)
             console.log('fontSize:', fontSize)
             Terminal.setFontSize(fontSize);

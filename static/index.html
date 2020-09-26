@@ -61,12 +61,16 @@
 <script>
 var completerWrapHeight = document.querySelector('div#completerWrap').clientHeight
 var completerElem = document.querySelector('div#completer')
-completerElem.style.fontSize = completerWrapHeight/2 + 'px'
+completerElem.style.fontSize = (completerWrapHeight/2 + 2) + 'px'
 completerElem.style.lineHeight = completerWrapHeight + 'px'
+completerElem.style.fontFamily = 'Helvetica'
 
 window.oncontextmenu = function() { return false; } // disable the annoying right-click menu on Touch screen on long press
 </script>
 
+<script>
+window.DEFAULT_FONT_SIZE = 20
+</script>
 <script src="preapp.js"></script>
 <script src="app.js"></script>
 <script>
