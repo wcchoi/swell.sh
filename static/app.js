@@ -879,7 +879,8 @@ var Keyboard = (function (Terminal, Analyzer) {
     var copyKey = {keyid: 'copy', keytext: '✂️', w: 0.1, h: 0.25,
         click: function() {
             var w = window.open()
-            w.document.write('<pre>' + term.serializeAddon.serialize() + '</pre>')
+
+            w.document.write('<meta name="viewport" content="width=device-width" />' + '<pre>' + term.serializeAddon.serialize() + '</pre>')
         },
         timeout: 99999,
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn},
@@ -1430,8 +1431,8 @@ var Keyboard = (function (Terminal, Analyzer) {
                 makeRegularNonSwipableKey('\\', 'backslash'),
                 makeRegularNonSwipableKey(';', 'semicolon'),
                 setfontsizeKey,
+                copyKey,
                 pasteKey,
-                makeNothingKey(),
                 makeNothingKey(),
                 makeNothingKey(),
             ]),
