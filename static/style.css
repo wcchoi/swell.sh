@@ -15,6 +15,7 @@ html, body {
     -webkit-flex-basis: 45vh;
     -webkit-flex-basis: calc(var(--vh, 1vh) * 45);
     -webkit-flex-grow: 2;
+    overflow: hidden;
 
     content: 'viewport-units-buggyfill; flex-basis: 45vh; -webkit-flex-basis: 45vh;';
 }

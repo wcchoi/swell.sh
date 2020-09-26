@@ -261,8 +261,8 @@ var Terminal = (function(term) {
     var setFontSize = function(size) {
         var termContainer = term.element.parentElement
         var origHeight = termContainer.offsetHeight;
-        termContainer.style.height = origHeight + "px";
         term.setOption("fontSize", size)
+        termContainer.style.height = origHeight + "px";
         term.fitAddon.fit()
         setTimeout(function() {
             term.scrollToBottom();
