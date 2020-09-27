@@ -374,15 +374,26 @@ class AutoCompleteHandler(tornado.web.RequestHandler):
             raise tornado.web.HTTPError
 
 def get_nvim_unix_socket_by_pid(nvim_pid):
-    regex = r'socket:\[(\d+)\]'
-    proc_net_unix_lines_split =  [l.split(' ') for l in Path('/proc/net/unix').read_text().splitlines()]
-    for root, dirs, files in os.walk('/proc/' + str(nvim_pid) + '/fd'):
-        for f in files:
-            m = re.match(regex, os.readlink(root + '/' + f))
-            if m:
-                for line in proc_net_unix_lines_split:
-                    if m.group(1) in line:
-                        return line[-1]
+    with open('/proc/%s/cmdline' % nvim_pid, 'r') as f:
+        cmdline = f.read()
+        cmdline = cmdline.split('\x00') # /proc/<PID>/cmdline separated by NULL
+
+    if '--listen' in cmdline:
+        # the socket is explicitly set in cmdline args
+        sock = cmdline[cmdline.index('--listen') + 1]
+        return sock
+    else:
+        # automatically check from /proc/<PID>/fd and find the unix socket
+        # NOTE: does not work on Android 10+ due to restriction of /proc/net
+        regex = r'socket:\[(\d+)\]'
+        proc_net_unix_lines_split =  [l.split(' ') for l in Path('/proc/net/unix').read_text().splitlines()]
+        for root, dirs, files in os.walk('/proc/' + str(nvim_pid) + '/fd'):
+            for f in files:
+                m = re.match(regex, os.readlink(root + '/' + f))
+                if m:
+                    for line in proc_net_unix_lines_split:
+                        if m.group(1) in line:
+                            return line[-1]
 
     return None
 
