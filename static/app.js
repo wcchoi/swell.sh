@@ -494,8 +494,8 @@ var Keyboard = (function (Terminal, Analyzer) {
             Analyzer.getSwipeSuggestions(inputpath, Keyboard.isUpperCase())
             .then(function(data) {
                 intermediateData = data
-                var shouldAddToDictionary = data.shouldAddToDictionary || true;
-                return Analyzer.gestureRecognize(inputpath, data.completions, 'bash', shouldAddToDictionary)
+                var shouldAddToDictionary = isNullOrUndefined(data.shouldAddToDictionary) ? true : data.shouldAddToDictionary
+                return Analyzer.gestureRecognize(inputpath, data.completions, APPSTATE.mode, shouldAddToDictionary)
             }).then(function(completions){
                 // console.log(completions)
                 var compl = _.map(completions, function(c) {

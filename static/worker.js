@@ -14,7 +14,7 @@ var NBest = 15
 
 var reservedWords = {}
 
-//word -> {path: point[], pathDistance: number}
+//word -> {word: word, path: point[], pathDistance: number}
 var DICTIONARY = {}
 
 // TODO: fix these hard code
@@ -107,24 +107,36 @@ var isAtoZ = function(c) {
     return (c >= 'a' && c <= 'z')||(c >= 'A' && c <= 'Z')
 }
 
+var toLowerCaseAlphaOnly = function(word) {
+    return _.filter(word, isAtoZ).join('').toLowerCase()
+}
+
 var wordToPath = function (word) {
-    //var lowerCaseAlphaOnly = _.filter(word, isAtoZ).join('').toLowerCase()
-    //if(lowerCaseAlphaOnly.length < 1) return []
     var centerCoords = _.map(word, function(c) {return CENTERS[c]})
     var simulatedPath = resample(centerCoords)
     return simulatedPath
 }
 
-var addToDictionary = function(word) {
-    //if(word in DICTIONARY) { return }
-    if(Object.prototype.hasOwnProperty.call(DICTIONARY, word)) { return }
-    //if(word.length === 1) { return }
-    var lowerCaseAlphaOnly = _.filter(word, isAtoZ).join('').toLowerCase()
+// return null if constructed path is invalid
+var wordToWordPathDistance = function(word) {
+    var lowerCaseAlphaOnly = toLowerCaseAlphaOnly(word)
     if(lowerCaseAlphaOnly.length <= 1) { return }
     var path = wordToPath(lowerCaseAlphaOnly)
     var pathDistance = totalDistance(path)
     if(pathDistance === 0) { return }
-    DICTIONARY[word] = {path: path, pathDistance: pathDistance}
+    return {
+        word: word,
+        path: path,
+        pathDistance: pathDistance
+    }
+}
+
+var addToDictionary = function(word) {
+    if(Object.prototype.hasOwnProperty.call(DICTIONARY, word)) { return }
+    var wordPathDistance = wordToWordPathDistance(word)
+    if(wordPathDistance) {
+        DICTIONARY[word] = wordPathDistance
+    }
 }
 
 var _getKeySuggestions = {}
@@ -253,19 +265,45 @@ var getKeySuggestions = function(cb) {
     }
 }
 
-var getSearchSpace = function(completions, mode) {
-    //var rw = reservedWords[mode] || []
-    return _(/*rw.concat*/(completions))
-              .filter(function(word) { return word.length > 1 && Object.prototype.hasOwnProperty.call(DICTIONARY, word)})
-              .map(function (word) {
-                    return {
-                        word: word,
-                        path: DICTIONARY[word].path,
-                        pathDistance: DICTIONARY[word].pathDistance
-                    }
-              }).value()
+var _getSearchSpace = {}
+_getSearchSpace['bash'] = function(completions) {
+    return _(completions)
+        .map(function(word, index) {
+            return {
+                originalIndex: index,
+                wordPathDistance: DICTIONARY[word] || wordToWordPathDistance(word) 
+            }
+        })
+        .filter(function(item) { return item.wordPathDistance })
+        .map(function (item) {
+            return {
+                word: item.wordPathDistance.word,
+                path: item.wordPathDistance.path,
+                pathDistance: item.wordPathDistance.pathDistance,
+                originalIndex: item.originalIndex
+            }
+        })
+        .value()
 }
 
+_getSearchSpace['vim'] = function(completions) {
+    return _(completions)
+        .map(function(word, index) { return {originalIndex: index, wordPathDistance: wordToWordPathDistance(word) } })
+        .filter(function(item) { return item.wordPathDistance })
+        .map(function (item) {
+            return {
+                word: item.wordPathDistance.word,
+                path: item.wordPathDistance.path,
+                pathDistance: item.wordPathDistance.pathDistance,
+                originalIndex: item.originalIndex,
+            }
+        }).value()
+}
+
+var getSearchSpace = function(completions, mode) {
+    if (mode === 'bash') return _getSearchSpace['bash'](completions)
+    else if (mode === 'vim') return _getSearchSpace['vim'](completions)
+}
 
 function getNearestCenter(pt) {
     var dists = _.mapValues(CENTERS, function(v) { return dist(pt, v) })
@@ -304,7 +342,7 @@ var gestureRecognize = function(inputpath, completions, mode, shouldAddToDiction
 
     var searchSpace = getSearchSpace(completions, mode)
 
-    var output = _.map(searchSpace, function(entry, index){
+    var output = _.map(searchSpace, function(entry){
         var scoreFullPath = diff(inputpath, entry.path)
 
         //partial path compare
@@ -334,7 +372,7 @@ var gestureRecognize = function(inputpath, completions, mode, shouldAddToDiction
             score_full: scoreFullPath,
             score_partial: scorePartialPath,
             portion: portion,
-            originalIndex: index
+            originalIndex: entry.originalIndex
         }
     })
 
@@ -425,6 +463,7 @@ _getSwipeSuggestions['vim'] = function(inputpath, isUpperCase, cb) {
                 addSpaceAtEnd: false,
                 prefix: '',
                 isSwipe: true,
+                shouldAddToDictionary: false,
             }
             cb({data: data})
         })
