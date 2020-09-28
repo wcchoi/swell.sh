@@ -749,7 +749,7 @@ var Keyboard = (function (Terminal, Analyzer) {
         swipe: {onEnter: nullfn, onMove: nullfn, onUp: nullfn},
         longpress: {onEnter: nullfn, onMove: nullfn, onUp: nullfn } }
 
-    var cursorKey = {keyid: 'cursor', keytext: '✥', w:0.1, h: 0.25,
+    var cursorKey = {keyid: 'cursor', keytext: '✥', w:0.1, h: 0.25, bw: 0.05, bh: 0.125,
         click: Terminal.moveCursorLeft,
         timeout: 500 /*ms*/,
         swipe: {onEnter: CursorAction.start, onMove: CursorAction.move, onUp: CursorAction.up },
@@ -1676,10 +1676,14 @@ var Keyboard = (function (Terminal, Analyzer) {
     }
 
     var isPtWithinKey = function (pt, key) {
-        return pt.x >= key.cx-key.w/2
-            && pt.x <= key.cx+key.w/2
-            && pt.y >= key.cy-key.h/2
-            && pt.y <= key.cy+key.h/2
+        // bw, bh (boundary width/height) is used by cursor key to allow entering
+        // the swipe state with less distance
+        var dw = key.bw ? key.bw/2 : key.w/2
+        var dh = key.bh ? key.bh/2 : key.h/2
+        return pt.x >= key.cx-dw
+            && pt.x <= key.cx+dw
+            && pt.y >= key.cy-dh
+            && pt.y <= key.cy+dh
     }
 
     var getKeyUnderPoint = function (pt) {
