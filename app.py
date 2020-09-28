@@ -427,10 +427,14 @@ async def nvim_get_curr_line(nvim_pid):
     result = await nvim.call(b'nvim_get_current_line')
     return result
 
+async def nvim_feedkeys(nvim_pid, key):
+    nvim = await get_nvim_client(nvim_pid)
+    result = await nvim.call('nvim_call_function', 'feedkeys', [key])
+    return result
+
 class NVimAutoCompleteHandler(tornado.web.RequestHandler):
-    def initialize(self, bash_info, ptyproc):
+    def initialize(self, bash_info):
         self.bash_info = bash_info
-        self.ptyproc = ptyproc
 
     async def get(self):
         mode, nvim_pid, _1, _2, _3 = bash_info.get_interacting_process_state()
@@ -459,11 +463,16 @@ class NVimAutoCompleteHandler(tornado.web.RequestHandler):
                 result = await nvim_get_complete_info(nvim_pid)
                 ret = list(map(lambda i: i['word'], result['items']))
             else:
-                self.ptyproc.write(first_char)
-                await asyncio.sleep(0.1)
-                result = await nvim_get_complete_info(nvim_pid)
-                ret = list(map(lambda i: i['word'], result['items']))
-
+                await nvim_feedkeys(nvim_pid, first_char)
+                cnt = 0
+                while cnt < 10:
+                    await asyncio.sleep(0.1)
+                    result = await nvim_get_complete_info(nvim_pid)
+                    ret = list(map(lambda i: i['word'], result['items']))
+                    if ret:
+                        break
+                    else:
+                        cnt += 1
 
             line = await nvim_get_curr_line(nvim_pid)
             point = 0
@@ -684,8 +693,7 @@ if __name__ == '__main__':
         (r"/line", GetBashLineHandler, {'bash_info': bash_info}),
         (r"/autocomplete", AutoCompleteHandler, {'bash_info': bash_info, 'executor': executor}),
         # NeoVim related
-        (r"/nvim_autocomplete", NVimAutoCompleteHandler,
-             {'bash_info': bash_info, 'ptyproc': term_manager.get_terminal().ptyproc}),
+        (r"/nvim_autocomplete", NVimAutoCompleteHandler, {'bash_info': bash_info}),
         (r"/nvim_select_suggestion", NvimSelectSuggestionHandler, {'bash_info': bash_info}),
         # Static files
         (r"/()", tornado.web.StaticFileHandler, {'path':'./static/index.html'}),
