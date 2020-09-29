@@ -255,7 +255,7 @@ def get_children_of_pid(pid):
             pass
     return pid_childrens[pid]
 
-NVIM_BIN_PATH = os.path.join(os.getcwd(), 'nvim-linux64/bin/nvim')
+NVIM_BIN_PATH = shutil.which('nvim')
 BASH_BIN_PATH = shutil.which('bash')
 class BashInfo:
     def __init__(self, **kwargs):
