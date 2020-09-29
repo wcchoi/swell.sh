@@ -1972,3 +1972,15 @@ term.onSelectionChange(function(ev) {
         copyTextToClipboard(sel)
     }
 })
+
+// Enable drop to "paste" to terminal
+term.element.parentElement.addEventListener('dragover', function(evt) { evt.preventDefault() })
+term.element.parentElement.addEventListener('drop', function(evt) {
+    evt.preventDefault()
+    var data = evt.dataTransfer.getData('text')
+    if(data.length > 0) {
+        if (data.indexOf('\n') > -1 &&
+            !confirm(`New line detected, are you sure?\n\n${data.slice(0, 100)}...`)) return
+        Terminal.insertWord(data, true)
+    }
+})
