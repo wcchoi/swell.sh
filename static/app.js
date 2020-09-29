@@ -1847,7 +1847,7 @@ var Keyboard = (function (Terminal, Analyzer) {
 
         var pointerUpEvent = function (evt) {
             evt.stopPropagation()
-            if((state === NOT_PRESSED) || (evt.pointerId !== ptrId)) return
+            if(evt.type !== 'touchcancel' && (state === NOT_PRESSED || evt.pointerId !== ptrId)) return
             var offsetY = evt.pageY - evt.currentTarget.offsetParent.offsetTop
             var offsetX = evt.pageX - evt.currentTarget.offsetParent.offsetLeft
             var currPt = {x: offsetX/_canvas.width, y:offsetY/_canvas.height}
@@ -1879,6 +1879,17 @@ var Keyboard = (function (Terminal, Analyzer) {
             _canvas.addEventListener('pointermove', pointerMoveEvent)
             _canvas.addEventListener('pointerup',   pointerUpEvent)
             _canvas.addEventListener('pointerout',  pointerUpEvent) //proper clean up
+            // touchcancel needed by mobile Safari when it does not fire pointerup event
+            // when swiping from screen edge into the keyboard
+            _canvas.addEventListener('touchcancel',  pointerUpEvent)
+
+            // magic to disable ios safari double-tap to zoom
+            // for other browser the touch-action:none css should have prevented that
+            // REF: https://stackoverflow.com/a/56393464
+            _canvas.addEventListener("click", function (event) {
+                event.preventDefault()
+                event.stopPropagation()
+            })
         }
 
         return {
