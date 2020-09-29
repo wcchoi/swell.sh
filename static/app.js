@@ -1675,11 +1675,11 @@ var Keyboard = (function (Terminal, Analyzer) {
         _ctx.clearRect(0,0,_canvas.width, _canvas.height)
     }
 
-    var isPtWithinKey = function (pt, key) {
+    var isPtWithinKey = function (pt, key, isSwipe) {
         // bw, bh (boundary width/height) is used by cursor key to allow entering
         // the swipe state with less distance
-        var dw = key.bw ? key.bw/2 : key.w/2
-        var dh = key.bh ? key.bh/2 : key.h/2
+        var dw = isSwipe && key.bw ? key.bw/2 : key.w/2
+        var dh = isSwipe && key.bh ? key.bh/2 : key.h/2
         return pt.x >= key.cx-dw
             && pt.x <= key.cx+dw
             && pt.y >= key.cy-dh
@@ -1689,7 +1689,7 @@ var Keyboard = (function (Terminal, Analyzer) {
     var getKeyUnderPoint = function (pt) {
         for(var i = 0; i < _layoutsConfig[_currMode][_currLayout].length; i++) {
             var key = _layoutsConfig[_currMode][_currLayout][i]
-            if(isPtWithinKey(pt, key)) {
+            if(isPtWithinKey(pt, key, false)) {
                 return key
             }
         }
@@ -1828,7 +1828,7 @@ var Keyboard = (function (Terminal, Analyzer) {
 
             if(state === INITIAL_STATE) {
                 // INITIAL STATE mouse move out of downState key
-                if(!isPtWithinKey(currPt, downState.key)) {
+                if(!isPtWithinKey(currPt, downState.key, true)) {
                     window.clearTimeout(timeoutEvent)
                     currHighlight.style.fill = '#f0f0f0'  //dehighlight
 
