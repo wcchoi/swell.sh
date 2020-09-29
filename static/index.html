@@ -28,6 +28,7 @@
     <script src="lib/lodash.min.js"></script>
     <script src="lib/robust-websocket.min.js"></script>
     <script src="lib/iziToast.min.js"></script>
+    <script src="lib/fastclick.js"></script>
 
     <link rel="stylesheet" href="style.css" />
 </head>
@@ -74,6 +75,9 @@ window.DEFAULT_FONT_SIZE = 20
 <script src="preapp.js"></script>
 <script src="app.js"></script>
 <script>
+$(function() {
+    FastClick.attach(document.querySelector('div#completer'));
+})
 window.addEventListener('beforeunload', function (e) {
     // Cancel the event
     e.preventDefault(); // If you prevent default behavior in Mozilla Firefox prompt will always be shown
