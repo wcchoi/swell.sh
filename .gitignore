@@ -1,2 +1,6 @@
 node_modules/
 venv/
+nvim-linux64.tar.gz
+nvim-linux64/*
+extra/xterm.js/
+!nvim-linux64/init.vim
