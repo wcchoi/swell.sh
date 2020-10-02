@@ -137,7 +137,7 @@ These are the current limitations, some maybe fixed in future update. PR welcome
 
 ## Tmux support setting
 
-NOTE: this section is NOT applicable to Termux on Android, see the section below
+NOTE: if you are using Tmux in Termux on Android, you do not need to apply the `cap_sys_ptrace` setting below
 
 If you want the autocomplete suggestion to work for bash inside Tmux, please do the following:
 
@@ -152,7 +152,9 @@ If you want the autocomplete suggestion to work for bash inside Tmux, please do 
     NOTE: you have to attach to the tmux session using the above command in order for Swell.sh to work.  
     If you create a new session, please detach from it then re-attach to it using the above command. Otherwise the autocomplete suggestion bar will not update.
 
-Tips: Adding `set -g mouse on` to your `~/.tmux.conf` to allow touch in Tmux, useful for switching between windows/panes
+Tips:
+- Adding `set -g mouse on` to your `~/.tmux.conf` to allow touch in Tmux, useful for switching between windows/panes
+- You can long-press 'n' or 'p' key to quickly switch between next/previous window
 
 ## Termux support setting
 
@@ -204,10 +206,19 @@ A: Click ⇧ (Shift) to switch layout to Uppercase, then click 'alt', when that 
 A: Click a key 'T+'
 
 ##### Q: How to type Non-English text?
-A: Click '…' Key then input in the text box using the mobile OS's keyboard 
+A: Click '🌐' Key then input in the text box using the mobile OS's keyboard
 
 ##### Q: Programs like `htop`/`vim` are not using full screen space:
 A: Try changing font size or running the `resize`/`resizecons` command, which could be obtained from `kbd` package on Ubuntu
+
+##### Q: How to copy text on terminal?
+1. Double tap to select the text, it will be automatically copied to clipboard (Chrome only)
+2. Click '✂️' key, it will pop up the terminal text content in a new window where you can select text to copy (limitation: control characters are also in the output)
+
+##### Q: How to paste text on terminal?
+1. Click '📋' key (Works only on Chrome and must be https/localhost)
+2. Click '🌐' Key then input in the text box
+3. You can also drag text from another window onto the terminal to paste text (eg: using Tablet split screens)
 
 ##### Tips
 - You can to set the Bash prompt to shorter for more space for typing the commands, by `export PS1='$ '`
@@ -220,7 +231,7 @@ See ACKNOWLEDGEMENT.md
 
 ## Licence
 
-Copyright (c) 2019 Choi Wai Chung
+Copyright (c) 2019 - 2020 Choi Wai Chung
 
 AGPL version 3
 
