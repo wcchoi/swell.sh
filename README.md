@@ -58,7 +58,7 @@ The difference is that the Web-based UI is designed to use on mobile phone and h
     - support partial path so that you don't need to swipe the whole gesture for long commands, i.e., swiping 'user' would likely to suggest 'useradd', 'userdel', etc
 1. Works for bash inside Tmux (See `Tmux support setting` below)
 1. Works on Termux on Android (See `Termux support setting` below)
-1. NeoVim autocomplete (See `Termux support setting` below)
+1. NeoVim autocomplete (See `NeoVim Autocomplete support` below)
 
 
 
