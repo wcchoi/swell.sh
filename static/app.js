@@ -133,9 +133,21 @@ var Analyzer = (function() {
                 }
             } else if(msg.process_state_change){
                 console.log('process_state_change', msg.process_state_change)
-                window.APPSTATE.mode = msg.process_state_change.mode
-                window.APPSTATE.insideTmux = msg.process_state_change.insideTmux
+                var prevMode = window.APPSTATE.mode
+                var newMode = msg.process_state_change.mode
+                var prevInsideTmux = window.APPSTATE.insideTmux 
+                var newInsideTmux = msg.process_state_change.insideTmux
+                window.APPSTATE.mode = newMode
+                window.APPSTATE.insideTmux = newInsideTmux
                 Keyboard.switchMode(window.APPSTATE.mode)
+                // mode state change or tmux state change
+                if (prevMode !== newMode || prevInsideTmux !== newInsideTmux) {
+                    if (newMode === 'vim' || newInsideTmux) {
+                        TouchScrolling.setUpEventListeners()
+                    } else if (prevMode === 'vim' || !newInsideTmux) {
+                        TouchScrolling.removeEventListeners()
+                    }
+                }
                 autocompletefn()
             } else {
                 if(msg.err) {
@@ -239,11 +251,13 @@ var Terminal = (function(term) {
             }
         }
     }
-    var insertSp2 = function(which) {
+    var insertSp2 = function(which, noUpdateCompleter) {
         return function(){
             xtermDataHandler(String.fromCharCode(0x1b) + which);
 
-            autocompletefn()
+            if(!noUpdateCompleter) {
+                autocompletefn()
+            }
         }
     }
     var insertCtrl = function(c) {
@@ -345,10 +359,13 @@ var Terminal = (function(term) {
     var moveCursorDown = insertSp2('OB')
     var moveCursorRight = insertSp2('OC')
     var moveCursorLeft = insertSp2('OD')
+    var scrollDown = insertSp2("[<65;1;1M", true)
+    var scrollUp = insertSp2("[<64;1;1M", true)
     var insertSoftTab = insert('\t')
     var deleteKey = insertSp2('[3~')
 
     return {
+        term: term,
         delGroupBefore: delGroupBefore,
         insertWord: insertWord,
         insert: insert,
@@ -369,8 +386,63 @@ var Terminal = (function(term) {
         insertSoftTab: insertSoftTab,
         inputNonEnglish: inputNonEnglish,
         deleteKey: deleteKey,
+        scrollDown: scrollDown,
+        scrollUp: scrollUp,
     }
 })(window.term)
+
+
+// Enable scrolling "special" program like Vim/Tmux
+var TouchScrolling = (function(Terminal) {
+    var term = Terminal.term
+    var pressed = false
+    var prevPtX, prevPtY
+    var moveVimDown = Terminal.scrollDown
+    var moveVimUp = Terminal.scrollUp
+    var pointerDownListener = function(evt) {
+        // showErrorCompleter("evt begin " + Date.now());
+        pressed = true
+        prevPtX = event.changedTouches[0].screenX
+        prevPtY = event.changedTouches[0].screenY
+    }
+    var pointerMoveListener = function(evt) {
+        if (pressed) {
+            var ptX = event.changedTouches[0].screenX
+            var ptY = event.changedTouches[0].screenY
+            if (ptY > prevPtY) {
+                moveVimUp() // touch scrolling dir is reversed
+                // showErrorCompleter("move up " + Date.now());
+            } else if (ptY < prevPtY) {
+                moveVimDown() // touch scrolling dir is reversed
+                // showErrorCompleter("move down " + Date.now());
+            }
+            prevPtX = ptX
+            prevPtY = ptY
+        }
+    }
+    var pointerUpListener = function(evt) {
+        // showErrorCompleter("evt up " + Date.now());
+        pressed = false
+    }
+    var listenersBound = false
+    return {
+        setUpEventListeners: function() {
+            if(!listenersBound) {
+                term.element.addEventListener('touchstart', pointerDownListener)
+                term.element.addEventListener('touchmove', pointerMoveListener)
+                term.element.addEventListener('touchend', pointerUpListener)
+                listenersBound = true
+            }
+        },
+        removeEventListeners: function() {
+            term.element.removeEventListener('touchstart', pointerDownListener)
+            term.element.removeEventListener('touchmove', pointerMoveListener)
+            term.element.removeEventListener('touchend', pointerUpListener)
+            pressed = false
+            listenersBound = false
+        }
+    }
+}(Terminal))
 
 var Keyboard = (function (Terminal, Analyzer) {
     //ds stands for down state
