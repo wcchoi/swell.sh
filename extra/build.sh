@@ -3,7 +3,7 @@ set -e
 
 git clone https://github.com/xtermjs/xterm.js.git
 cd xterm.js
-git checkout 4.8.1
+git checkout 4.9.0
 cp -r ../xterm-addon-terminado/ addons/
 cp ../xterm-addon-terminado/tsconfig.all.json.patch ./
 patch < tsconfig.all.json.patch
@@ -20,4 +20,4 @@ npm run package # Build addons/xterm-addon-serialize.js
 cd ../../
 mkdir -p ../../static/lib/xterm/addons
 cp css/xterm.css lib/xterm.js ../../static/lib/xterm
-cp addons/xterm-addon-{fit,webgl,terminado.serialize}/lib/*.js ../../static/lib/xterm/addons
+cp addons/xterm-addon-{fit,webgl,terminado,serialize}/lib/*.js ../../static/lib/xterm/addons
