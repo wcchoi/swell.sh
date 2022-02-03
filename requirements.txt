@@ -5,7 +5,7 @@ colorama==0.4.3
 loguru==0.2.5
 msgpack==1.0.0
 ptyprocess==0.6.0
-pyelftools==0.25
+pyelftools==0.27
 Pygments==2.7.4
 ring==0.7.3
 six==1.15.0
