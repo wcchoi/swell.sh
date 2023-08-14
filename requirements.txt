@@ -11,5 +11,5 @@ ring==0.7.3
 six==1.15.0
 tenacity==5.0.3
 terminado==0.8.1
-tornado==6.0.4
+tornado==6.3.3
 wirerope==0.3.0
